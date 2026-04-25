@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arcanator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen flex flex-col items-center justify-center p-6">
+
+  <!-- Logo / Header -->
+  <div class="mb-10 text-center select-none">
+    <h1 class="text-5xl font-black tracking-tight bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
+      Arcanator
+    </h1>
+    <p class="text-gray-400 mt-2 text-sm">Podcast → Video YouTube con imágenes IA</p>
+  </div>
+
+  <!-- Upload card -->
+  <div id="upload-section" class="w-full max-w-xl">
+    <form id="upload-form" class="bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-xl space-y-6">
+
+      <!-- Drop zone -->
+      <div
+        id="drop-zone"
+        class="border-2 border-dashed border-gray-700 rounded-xl p-10 text-center cursor-pointer transition-all hover:border-violet-500 hover:bg-violet-950/20"
+      >
+        <input type="file" id="audio-input" accept=".mp3,.wav,.m4a,.ogg,.flac,.mp4,.webm" class="hidden" />
+        <div id="drop-icon" class="text-5xl mb-3">🎙️</div>
+        <p id="drop-label" class="text-gray-300 font-medium">
+          Arrastra tu audio aquí o <span class="text-violet-400 underline cursor-pointer">haz clic para seleccionar</span>
+        </p>
+        <p class="text-gray-500 text-xs mt-2">MP3, WAV, M4A, OGG · Cualquier duración</p>
+      </div>
+
+      <!-- Interval slider -->
+      <div>
+        <label class="flex justify-between text-sm text-gray-300 mb-2">
+          <span>Intervalo entre imágenes</span>
+          <span id="interval-value" class="text-violet-400 font-semibold">10 s</span>
+        </label>
+        <input
+          type="range" id="interval" min="5" max="60" step="5" value="10"
+          class="w-full accent-violet-500 cursor-pointer"
+        />
+        <div class="flex justify-between text-xs text-gray-600 mt-1">
+          <span>5 s</span><span>60 s</span>
+        </div>
+      </div>
+
+      <!-- Submit -->
+      <button
+        type="submit"
+        id="submit-btn"
+        class="w-full py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl font-semibold transition-colors text-white"
+        disabled
+      >
+        Generar Video
+      </button>
+    </form>
+  </div>
+
+  <!-- Progress section (hidden until job starts) -->
+  <div id="progress-section" class="w-full max-w-xl mt-8 hidden">
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-xl space-y-5">
+
+      <h2 class="font-semibold text-gray-200">Procesando…</h2>
+
+      <!-- Progress bar -->
+      <div class="w-full bg-gray-800 rounded-full h-3 overflow-hidden">
+        <div
+          id="progress-bar"
+          class="h-3 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full transition-all duration-500"
+          style="width: 0%"
+        ></div>
+      </div>
+
+      <p id="progress-msg" class="text-sm text-gray-400 min-h-[1.25rem]">Iniciando…</p>
+
+      <!-- Image thumbnails preview grid (updates in real-time) -->
+      <div id="preview-grid" class="grid grid-cols-4 gap-2 max-h-56 overflow-y-auto"></div>
+
+      <!-- Error message -->
+      <p id="error-msg" class="text-red-400 text-sm hidden"></p>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

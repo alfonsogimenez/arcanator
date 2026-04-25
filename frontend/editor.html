@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arcanator – Editor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/wavesurfer.js@7"></script>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen flex flex-col overflow-hidden" style="height:100dvh">
+
+  <!-- ── Top bar ─────────────────────────────────────────── -->
+  <header class="flex items-center justify-between px-6 py-3 bg-gray-900 border-b border-gray-800 shrink-0">
+    <a href="/" class="text-xl font-black bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent select-none">
+      Arcanator
+    </a>
+
+    <div class="flex items-center gap-3">
+      <!-- Export button -->
+      <button
+        id="export-btn"
+        class="px-5 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg font-semibold text-sm transition-colors"
+        disabled
+      >
+        Exportar Video
+      </button>
+      <!-- Download button (hidden until export done) -->
+      <a
+        id="download-btn"
+        href="#"
+        class="hidden px-5 py-2 bg-green-600 hover:bg-green-500 rounded-lg font-semibold text-sm transition-colors"
+        download="arcanator.mp4"
+      >
+        ⬇ Descargar MP4
+      </a>
+    </div>
+  </header>
+
+  <!-- ── Waveform area ───────────────────────────────────── -->
+  <section class="pt-4 pb-2 bg-gray-900 border-b border-gray-800 shrink-0">
+    <!-- Transport controls -->
+    <div class="flex items-center gap-4 mb-3 px-6">
+      <button id="play-btn"
+        class="w-10 h-10 flex items-center justify-center bg-violet-600 hover:bg-violet-500 rounded-full transition-colors text-lg font-bold"
+        title="Reproducir / Pausar (Espacio)">
+        ▶
+      </button>
+
+      <div class="flex items-center gap-1 text-sm text-gray-400 font-mono tabular-nums">
+        <span id="current-time">0:00:00</span>
+        <span class="text-gray-600">/</span>
+        <span id="total-time">0:00:00</span>
+      </div>
+
+      <!-- Zoom waveform -->
+      <div class="flex items-center gap-2 ml-auto">
+        <span class="text-xs text-gray-500">Zoom:</span>
+        <input type="range" id="wf-zoom" min="1" max="200" value="1"
+          class="w-28 accent-violet-500 cursor-pointer" title="Zoom de forma de onda" />
+      </div>
+
+      <!-- Volume -->
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-gray-500">🔊</span>
+        <input type="range" id="volume" min="0" max="1" step="0.05" value="1"
+          class="w-20 accent-violet-500 cursor-pointer" />
+      </div>
+    </div>
+
+    <!-- WaveSurfer container -->
+    <div id="waveform" class="w-full cursor-pointer" style="height:80px;overflow-x:auto;overflow-y:hidden;"></div>
+  </section>
+
+  <!-- ── Export progress bar (hidden until export starts) ── -->
+  <div id="export-progress-wrap" class="hidden px-6 py-2 bg-gray-900 border-b border-gray-800 shrink-0">
+    <div class="flex items-center gap-3">
+      <div class="flex-1 bg-gray-800 rounded-full h-2 overflow-hidden">
+        <div id="export-bar" class="h-2 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full transition-all duration-300" style="width:0%"></div>
+      </div>
+      <span id="export-msg" class="text-xs text-gray-400 whitespace-nowrap w-64 text-right">Preparando…</span>
+    </div>
+  </div>
+
+  <!-- ── Timeline strip ─────────────────────────────────── -->
+  <main class="flex-1 overflow-y-hidden">
+    <!-- Loading placeholder -->
+    <div id="timeline-loading" class="flex items-center justify-center h-full text-gray-500 text-sm gap-3">
+      <div class="spinner"></div>
+      <span>Cargando timeline…</span>
+    </div>
+
+    <!-- Timeline scroll container -->
+    <div id="timeline-scroll"
+      class="hidden h-full overflow-x-auto overflow-y-hidden px-4 py-4 flex gap-3 items-start timeline-scroll-container"
+      style="display:none">
+    </div>
+  </main>
+
+  <!-- ── Hidden file input for image replacement ─────────── -->
+  <input type="file" id="replace-input" accept="image/*" class="hidden" />
+
+  <!-- ── Search panel (slides in from right) ────────────── -->
+  <aside id="search-panel"
+    class="fixed top-0 right-0 h-full flex flex-col bg-gray-900 border-l border-gray-800 z-50"
+    style="width:560px;transform:translateX(100%);transition:transform .3s ease">
+
+    <!-- Panel header -->
+    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800 shrink-0">
+      <div class="min-w-0 flex-1">
+        <p class="text-xs text-gray-500 mb-0.5">Búsqueda usada:</p>
+        <p id="panel-query" class="text-sm text-violet-300 font-medium leading-tight truncate"></p>
+      </div>
+      <button id="panel-close"
+        class="ml-3 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-white hover:bg-gray-700 transition shrink-0">
+        ✕
+      </button>
+    </div>
+
+    <!-- Custom search bar -->
+    <div class="flex gap-2 px-3 py-2 border-b border-gray-800 shrink-0">
+      <input id="panel-search-input" type="text" placeholder="Nueva búsqueda…"
+        class="flex-1 bg-gray-800 text-sm text-gray-100 rounded-lg px-3 py-1.5 border border-gray-700 focus:border-violet-500 focus:outline-none min-w-0" />
+      <button id="panel-search-btn"
+        class="px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-sm rounded-lg transition-colors shrink-0">
+        🔍
+      </button>
+    </div>
+
+    <!-- Panel instructions -->
+    <p class="px-4 py-2 text-xs text-gray-500 border-b border-gray-800 shrink-0">
+      Haz clic para usar · Arrastra al slot o entre columnas
+    </p>
+
+    <!-- Panel spinner -->
+    <div id="panel-spinner" class="flex items-center justify-center gap-2 py-8 text-gray-500 text-sm">
+      <div class="spinner"></div><span>Buscando imágenes…</span>
+    </div>
+
+    <!-- Panel image grid -->
+    <div id="panel-grid"
+      class="hidden flex-1 overflow-y-auto p-3"
+      style="display:none">
+      <div id="panel-grid-inner"
+        class="grid gap-2"
+        style="grid-template-columns:repeat(2,1fr)">
+      </div>
+      <!-- Infinite scroll sentinel -->
+      <div id="panel-sentinel" class="h-4"></div>
+      <!-- Load-more spinner -->
+      <div id="panel-load-more" class="hidden flex justify-center py-3">
+        <div class="spinner"></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Panel backdrop ─────────────────────────────────── -->
+  <div id="panel-backdrop"
+    class="hidden fixed inset-0 bg-black/40 z-40"
+    style="backdrop-filter:blur(2px)">
+  </div>
+
+  <!-- ── Lightbox ─────────────────────────────────────────── -->
+  <div id="lightbox"
+    class="hidden fixed inset-0 bg-black/90 z-[100] flex items-center justify-center cursor-zoom-out"
+    style="backdrop-filter:blur(8px)">
+    <button id="lightbox-close"
+      class="absolute top-4 right-4 w-10 h-10 flex items-center justify-center bg-gray-800 hover:bg-gray-700 text-white rounded-full text-xl">✕</button>
+    <img id="lightbox-img" class="max-h-[90vh] max-w-[90vw] object-contain rounded-xl shadow-2xl" src="" alt="" />
+  </div>
+
+  <script src="/editor.js"></script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+$env:PATH = "C:\Users\agimenezu\AppData\Local\Programs\Python\Python312\Scripts;C:\Users\agimenezu\AppData\Local\Programs\Python\Python312;" + $env:PATH
+C:\Arcanator\backend\venv\Scripts\uvicorn.exe main:app --host 0.0.0.0 --port 8000 --reload

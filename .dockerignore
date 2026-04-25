@@ -1,0 +1,11 @@
+backend/venv/
+backend/__pycache__/
+backend/services/__pycache__/
+output/
+*.pyc
+*.pyo
+.env
+.env.*
+*.log
+node_modules/
+.git/
