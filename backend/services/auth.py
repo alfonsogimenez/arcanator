@@ -122,12 +122,20 @@ def auth_callback(request: Request) -> RedirectResponse:
     if not code:
         raise HTTPException(status_code=400, detail="No se recibió el código de autorización.")
 
+    # oauthlib raises a Warning-as-exception when Google returns fewer scopes
+    # (e.g. youtube.upload not yet added to consent screen). Relax this check.
+    import os as _os
+    _os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
+
     redirect_uri = _get_redirect_uri(request)
     flow = _build_flow(redirect_uri)
 
     # Exchange code for tokens
     import google.oauth2.credentials
-    flow.fetch_token(code=code)
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        flow.fetch_token(code=code)
     credentials = flow.credentials
 
     # Fetch user profile
