@@ -149,6 +149,13 @@ railway logs
 - **Causa**: PowerShell tiene política de ejecución restrictiva
 - **Solución**: `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force`
 
+### Error 6: Job se queda en "En cola..." indefinidamente
+- **Causa**: Los imports dentro de los hilos de procesamiento usaban `from services.X` (ruta relativa), que funciona en local (arrancando desde `backend/`) pero falla en Docker (donde el working dir es `/app`)
+- **Archivos afectados**: `backend/main.py`, `backend/services/image_gen.py`, `backend/services/video_gen.py`
+- **Solución**: Cambiar todos los imports a `from backend.services.X` (ruta absoluta)
+- **Verificación**: `grep -r "from services\." backend/` debe devolver 0 resultados
+- **Nota**: También requiere crear `backend/__init__.py` vacío para que Python trate `backend` como paquete
+
 ## Notas importantes
 
 - El modelo Whisper base (~150MB) está **baked en la imagen Docker** — no se descarga en cada request
