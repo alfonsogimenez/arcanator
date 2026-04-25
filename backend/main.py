@@ -44,8 +44,46 @@ async def health():
 
 
 # ---------------------------------------------------------------------------
-# Auth endpoints (Google OAuth)
+# Admin: disk cleanup  (keep N most recent jobs, delete the rest)
 # ---------------------------------------------------------------------------
+@app.post("/api/admin/cleanup")
+async def cleanup_old_jobs(keep: int = 3):
+    """Delete all but the {keep} most recent jobs from disk and memory."""
+    import shutil as _shutil
+    with _lock:
+        all_ids = list(_jobs.keys())
+
+    # Sort by job directory mtime (newest first)
+    def _mtime(jid):
+        p = OUTPUT_DIR / jid
+        return p.stat().st_mtime if p.exists() else 0
+
+    sorted_ids = sorted(all_ids, key=_mtime, reverse=True)
+    to_delete  = sorted_ids[keep:]
+    freed_dirs = []
+
+    for jid in to_delete:
+        job_dir = OUTPUT_DIR / jid
+        try:
+            if job_dir.exists():
+                _shutil.rmtree(str(job_dir))
+                freed_dirs.append(jid)
+        except Exception as e:
+            print(f"[cleanup] could not remove {jid}: {e}")
+        with _lock:
+            _jobs.pop(jid, None)
+            _event_queues.pop(jid, None)
+
+    # Also remove orphan dirs not in _jobs
+    for d in OUTPUT_DIR.iterdir():
+        if d.is_dir() and d.name not in sorted_ids[:keep]:
+            try:
+                _shutil.rmtree(str(d))
+                freed_dirs.append(d.name)
+            except Exception:
+                pass
+
+    return JSONResponse({"deleted": len(freed_dirs), "kept": keep, "ids": freed_dirs})
 @app.get("/api/auth/google")
 async def login_google(request: Request):
     from backend.services.auth import auth_google
