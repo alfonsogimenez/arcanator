@@ -306,7 +306,7 @@ async def select_candidate(job_id: str, index: int, body: dict):
 async def free_search_images(q: str, offset: int = 0):
     if not q.strip():
         raise HTTPException(status_code=400, detail="Query vacía.")
-    from services.image_gen import _scrape_bing_image_entries
+    from backend.services.image_gen import _scrape_bing_image_entries
     # Vary the query slightly per page so Bing returns different results
     query = q.strip()
     if offset > 0:
@@ -326,7 +326,7 @@ async def search_slot_images(job_id: str, index: int):
     if index < 0 or index >= len(slots):
         raise HTTPException(status_code=400, detail="Indice de slot invalido.")
 
-    from services.image_gen import _scrape_bing_image_entries
+    from backend.services.image_gen import _scrape_bing_image_entries
     query = slots[index].get("prompt", slots[index].get("text", ""))
     raw   = _scrape_bing_image_entries(query, count=24)
     entries = [{"url": e["murl"], "page_url": e["purl"]} for e in raw]
@@ -348,7 +348,7 @@ async def use_url_for_slot(job_id: str, index: int, body: dict):
         raise HTTPException(status_code=400, detail="URL invalida.")
 
     import shutil as _shutil
-    from services.image_gen import download_url_to_path
+    from backend.services.image_gen import download_url_to_path
     job_dir    = OUTPUT_DIR / job_id
     images_dir = job_dir / "images"
     images_dir.mkdir(exist_ok=True)
@@ -410,8 +410,8 @@ async def export_video(job_id: str):
 # Background workers
 # ---------------------------------------------------------------------------
 def _process_job(job_id: str):
-    from services.transcription import transcribe_audio
-    from services.image_gen import generate_all_images
+    from backend.services.transcription import transcribe_audio
+    from backend.services.image_gen import generate_all_images
 
     try:
         with _lock:
@@ -465,7 +465,7 @@ def _process_job(job_id: str):
 
 
 def _run_export(job_id: str):
-    from services.video_gen import assemble_video
+    from backend.services.video_gen import assemble_video
 
     try:
         with _lock:
