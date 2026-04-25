@@ -80,10 +80,23 @@ POST /api/jobs/{id}/publish-youtube  body: { title, description }
 
 ## Debugging
 
-**OAuth error "redirect_uri_mismatch"**: The callback URL in Google Cloud Console must exactly match what the server sends. Check `_get_redirect_uri()` in `auth.py` — it uses `request.base_url`.
+**OAuth error "redirect_uri_mismatch"**: Railway corre detrás de un proxy TLS — `request.base_url` llega como `http://`. La fix usa `RAILWAY_PUBLIC_DOMAIN` (variable automática de Railway) para construir siempre `https://arcanator-production.up.railway.app/api/auth/callback`. Ver `_get_redirect_uri()` en `auth.py`.
+
+**Error 403: access_denied**: La app está en modo "Testing" en Google Cloud. El email del usuario debe estar en **Público → Usuarios de prueba**. Ruta: Google Cloud Console → Google Auth Platform → Público → "+ Add users".
+
+**Internal Server Error en /api/auth/callback**: oauthlib lanza excepción si Google devuelve menos scopes de los pedidos (ocurre cuando `youtube.upload` no está añadido en la pantalla de consentimiento). Fix: `OAUTHLIB_RELAX_TOKEN_SCOPE=1` como variable de entorno en Railway + `warnings.catch_warnings()` en el código. El scope de YouTube debe añadirse en Google Cloud → "Acceso a los datos".
 
 **401 on publish**: Session cookie missing or expired. User must log in again.
 
 **Token expired during upload**: `google.auth.transport.requests.Request()` refresh is called automatically before upload starts.
 
 **`GOOGLE_CLIENT_ID not set`**: `/api/auth/google` returns 503 with clear message.
+
+## Variables de entorno requeridas en Railway
+
+| Variable | Descripción |
+|----------|-------------|
+| `GOOGLE_CLIENT_ID` | OAuth 2.0 Client ID de Google Cloud Console |
+| `GOOGLE_CLIENT_SECRET` | OAuth 2.0 Client Secret |
+| `SECRET_KEY` | String aleatorio para firmar cookies |
+| `OAUTHLIB_RELAX_TOKEN_SCOPE` | `1` — evita excepción si Google devuelve scopes distintos |
