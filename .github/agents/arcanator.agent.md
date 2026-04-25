@@ -83,6 +83,32 @@ GET    /api/health                                 healthcheck
 4. When running the server locally: activate venv first (`venv\Scripts\activate`), ensure FFmpeg is in PATH
 5. After making changes, validate with `get_errors` and run the server to confirm
 
+## GitHub Repository
+
+- **Repo**: `https://github.com/alfonsogimenez/arcanator`
+- **Owner**: `alfonsogimenez`
+- **Branch principal**: `main`
+- **Remote**: `origin`
+
+### Operaciones Git habituales
+
+```powershell
+# Ver estado
+cd C:\Arcanator
+git status
+
+# Subir cambios
+git add .
+git commit -m "descripción del cambio"
+git push origin main
+
+# Actualizar remote con token (sustituir TOKEN por el nuevo)
+git remote set-url origin https://alfonsogimenez:TOKEN@github.com/alfonsogimenez/arcanator.git
+```
+
+> El token de acceso NO se guarda aquí por seguridad. Generarlo en:
+> https://github.com/settings/tokens → Personal access tokens (classic) → scope `repo`
+
 ## Self-Maintenance
 
 When the user asks to update this agent or create/edit skill files, use `edit` to modify `.github/agents/arcanator.agent.md` or files in `.github/skills/`.
