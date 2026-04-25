@@ -306,13 +306,14 @@ async def select_candidate(job_id: str, index: int, body: dict):
 async def free_search_images(q: str, offset: int = 0):
     if not q.strip():
         raise HTTPException(status_code=400, detail="Query vacía.")
-    from services.image_gen import scrape_bing_image_urls
+    from services.image_gen import _scrape_bing_image_entries
     # Vary the query slightly per page so Bing returns different results
     query = q.strip()
     if offset > 0:
         query = f"{query} {offset}"
-    urls = scrape_bing_image_urls(query, count=24)
-    return {"urls": urls, "query": q.strip(), "offset": offset}
+    raw = _scrape_bing_image_entries(query, count=24)
+    entries = [{"url": e["murl"], "page_url": e["purl"]} for e in raw]
+    return {"entries": entries, "query": q.strip(), "offset": offset}
 
 
 # ---------------------------------------------------------------------------
@@ -325,10 +326,11 @@ async def search_slot_images(job_id: str, index: int):
     if index < 0 or index >= len(slots):
         raise HTTPException(status_code=400, detail="Indice de slot invalido.")
 
-    from services.image_gen import scrape_bing_image_urls
+    from services.image_gen import _scrape_bing_image_entries
     query = slots[index].get("prompt", slots[index].get("text", ""))
-    urls  = scrape_bing_image_urls(query, count=24)
-    return {"urls": urls, "query": query}
+    raw   = _scrape_bing_image_entries(query, count=24)
+    entries = [{"url": e["murl"], "page_url": e["purl"]} for e in raw]
+    return {"entries": entries, "query": query}
 
 
 # ---------------------------------------------------------------------------
@@ -371,7 +373,8 @@ async def use_url_for_slot(job_id: str, index: int, body: dict):
         raise HTTPException(status_code=422, detail="No se pudo descargar la imagen desde esa URL.")
 
     image_url  = f"/output/{job_id}/images/{index}_{file_idx}.jpg"
-    new_cand   = {"url": url, "path": str(out_path), "image_url": image_url}
+    page_url   = body.get("page_url", "").strip()
+    new_cand   = {"url": url, "page_url": page_url, "path": str(out_path), "image_url": image_url}
 
     with _lock:
         existing = _jobs[job_id]["slots"][index].get("candidates", [])

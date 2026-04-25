@@ -217,19 +217,18 @@
       check.className = 'candidate-check';
       check.textContent = '\u2713';
       wrapper.appendChild(check);
+    }
 
-      // Source page link badge
-      if (pageUrl) {
-        const link = document.createElement('a');
-        link.href      = pageUrl;
-        link.target    = '_blank';
-        link.rel       = 'noopener noreferrer';
-        link.title     = 'Ver fuente';
-        link.className = 'candidate-source-link';
-        link.textContent = '\uD83D\uDD17';
-        link.addEventListener('click', (e) => e.stopPropagation());
-        wrapper.appendChild(link);
-      }
+    if (pageUrl) {
+      const link = document.createElement('a');
+      link.href      = pageUrl;
+      link.target    = '_blank';
+      link.rel       = 'noopener noreferrer';
+      link.title     = 'Ver fuente';
+      link.className = 'candidate-source-link';
+      link.textContent = '\uD83D\uDD17';
+      link.addEventListener('click', (e) => e.stopPropagation());
+      wrapper.appendChild(link);
     }
 
     // Make draggable so it can be dropped onto another slot column
@@ -270,14 +269,14 @@
   }
 
   // -- Use external URL (from search panel or drag) --------
-  async function useExternalUrl(slotIdx, url) {
+  async function useExternalUrl(slotIdx, url, pageUrl) {
     const card = document.getElementById(`card-${slotIdx}`);
     if (card) card.style.opacity = '0.6';
     try {
       const res = await fetch(`/api/jobs/${jobId}/slots/${slotIdx}/use-url`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, page_url: pageUrl || '' }),
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
@@ -331,9 +330,9 @@
       const res = await fetch(`/api/search?q=${encodeURIComponent(query)}&offset=${panelOffset}`);
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
-      const urls = data.urls || [];
+      const entries = data.entries || (data.urls || []).map(u => ({ url: u, page_url: '' }));
 
-      urls.forEach((url) => {
+      entries.forEach(({ url, page_url: pageUrl }) => {
         const wrapper = document.createElement('div');
         wrapper.className = 'relative rounded-md overflow-hidden cursor-pointer panel-img-wrapper';
         wrapper.style.height = '160px';
@@ -345,20 +344,33 @@
         img.loading   = 'lazy';
         img.onerror   = () => { wrapper.style.display = 'none'; };
 
+        wrapper.appendChild(img);
+
+        if (pageUrl) {
+          const link = document.createElement('a');
+          link.href      = pageUrl;
+          link.target    = '_blank';
+          link.rel       = 'noopener noreferrer';
+          link.title     = 'Ver fuente';
+          link.className = 'candidate-source-link';
+          link.textContent = '\uD83D\uDD17';
+          link.addEventListener('click', (e) => e.stopPropagation());
+          wrapper.appendChild(link);
+        }
+
         wrapper.addEventListener('click', () => {
-          if (panelSlotIdx !== null) useExternalUrl(panelSlotIdx, url);
+          if (panelSlotIdx !== null) useExternalUrl(panelSlotIdx, url, pageUrl);
         });
         wrapper.addEventListener('dragstart', (e) => {
           e.dataTransfer.setData('text/plain', url);
           e.dataTransfer.effectAllowed = 'copy';
         });
 
-        wrapper.appendChild(img);
         panelGridInner.appendChild(wrapper);
       });
 
-      panelOffset += urls.length;
-      panelHasMore = urls.length >= 20; // if fewer returned, assume no more
+      panelOffset += entries.length;
+      panelHasMore = entries.length >= 20; // if fewer returned, assume no more
     } catch (err) {
       panelQuery.textContent = `Error: ${err.message}`;
     } finally {
