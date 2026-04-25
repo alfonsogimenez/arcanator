@@ -139,6 +139,10 @@
       totalTimeEl.textContent = formatTime(dur);
       exportBtn.disabled = false;
       if (timelineBuiltScrollWidth > 0) applyWaveformZoom();
+      // Auto-export when coming from "Generar y publicar en YouTube"
+      if (autoYT && currentUser && job.status === 'ready') {
+        setTimeout(() => exportBtn.click(), 500);
+      }
     });
     ws.on('timeupdate', (t) => {
       currentTimeEl.textContent = formatTime(t);
@@ -642,20 +646,36 @@
     exportMsg.textContent = message;
   }
 
+  // -- Generate title/description from slot content ---------
+  function _buildYTMeta() {
+    const texts = slots.map(s => s.text || '').filter(Boolean);
+    const full  = texts.join(' ');
+    // Title: first ~80 chars of transcript, cleaned up
+    let title = full.replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (full.length > 80) title = title.slice(0, title.lastIndexOf(' ') || 79) + '…';
+    if (!title) title = 'Vídeo Arcanator';
+    // Description: full transcript truncated to 4500 chars
+    const description = 'Generado con Arcanator\n\n' + full.slice(0, 4500);
+    return { title, description };
+  }
+
   // -- Post-export: show YouTube button if logged in -------
   function onExportDone() {
     if (currentUser) {
       publishYtBtn.classList.remove('hidden');
     }
     if (autoYT && currentUser) {
-      openYTModal();
+      // Auto-publish directly without showing the modal
+      const { title, description } = _buildYTMeta();
+      _startYTUpload(title, description);
     }
   }
 
   // -- YouTube modal ----------------------------------------
   function openYTModal(defaultTitle) {
-    ytTitle.value       = defaultTitle || document.title.replace(' – Editor', '') || 'Vídeo Arcanator';
-    ytDescription.value = 'Generado con Arcanator';
+    const meta = _buildYTMeta();
+    ytTitle.value       = defaultTitle || meta.title;
+    ytDescription.value = meta.description;
     ytProgressWrap.classList.add('hidden');
     ytDoneWrap.classList.add('hidden');
     ytSubmit.disabled = false;
@@ -669,13 +689,24 @@
   ytSubmit.addEventListener('click', async () => {
     const title       = ytTitle.value.trim() || 'Vídeo Arcanator';
     const description = ytDescription.value.trim() || 'Generado con Arcanator';
+    _startYTUpload(title, description);
+  });
 
+  async function _startYTUpload(title, description) {
     ytSubmit.disabled = true;
     ytCancel.disabled = true;
     ytProgressWrap.classList.remove('hidden');
     ytDoneWrap.classList.add('hidden');
     ytBar.style.width = '0%';
-    ytMsg.textContent = 'Iniciando…';
+    ytMsg.textContent = 'Iniciando subida a YouTube…';
+
+    // If autoYT, show progress directly in the export bar instead of the modal
+    if (autoYT) {
+      exportWrap.classList.remove('hidden');
+      setExportProgress(0, '📹 Subiendo a YouTube…');
+    } else {
+      ytModal.classList.remove('hidden');
+    }
 
     try {
       const res = await fetch(`/api/jobs/${jobId}/publish-youtube`, {
@@ -689,6 +720,7 @@
       }
     } catch (err) {
       ytMsg.textContent = `❌ ${err.message}`;
+      if (autoYT) setExportProgress(0, `❌ ${err.message}`);
       ytSubmit.disabled = false;
       ytCancel.disabled = false;
       return;
@@ -700,6 +732,7 @@
       const d = JSON.parse(e.data);
       ytBar.style.width = `${d.percent}%`;
       ytMsg.textContent = d.message;
+      if (autoYT) setExportProgress(d.percent, `📹 ${d.message}`);
     });
     es.addEventListener('youtube_done', (e) => {
       es.close();
@@ -711,16 +744,28 @@
       ytCancel.textContent = 'Cerrar';
       ytCancel.disabled = false;
       ytSubmit.classList.add('hidden');
+      if (autoYT) {
+        setExportProgress(100, `✅ ¡Publicado en YouTube!`);
+        // Show a prominent link button
+        const linkBtn = document.createElement('a');
+        linkBtn.href = d.youtube_url;
+        linkBtn.target = '_blank';
+        linkBtn.rel = 'noopener noreferrer';
+        linkBtn.className = 'px-5 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm font-semibold transition-colors text-white';
+        linkBtn.textContent = '▶ Ver en YouTube';
+        downloadBtn.insertAdjacentElement('afterend', linkBtn);
+      }
     });
     es.addEventListener('youtube_error', (e) => {
       es.close();
       const d = JSON.parse(e.data);
       ytMsg.textContent = `❌ ${d.message}`;
+      if (autoYT) setExportProgress(0, `❌ Error YouTube: ${d.message}`);
       ytSubmit.disabled = false;
       ytCancel.disabled = false;
     });
     es.onerror = () => { es.close(); };
-  });
+  }
 
   // -- Helpers ---------------------------------------------
   function formatTime(secs) {
