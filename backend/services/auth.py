@@ -28,6 +28,11 @@ GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 SECRET_KEY           = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 COOKIE_NAME          = "arcanator_session"
 
+# RAILWAY_PUBLIC_DOMAIN is set automatically by Railway (e.g. arcanator-production.up.railway.app)
+# Use it to build a guaranteed-correct https callback URL.
+# Falls back to constructing from request (for local dev).
+_RAILWAY_DOMAIN = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
+
 _SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
@@ -39,14 +44,14 @@ _signer = URLSafeSerializer(SECRET_KEY, salt="session")
 
 
 def _get_redirect_uri(request: Request) -> str:
-    """Build the OAuth callback URL from the incoming request host.
-    Railway runs behind a TLS-terminating proxy, so request.base_url
-    arrives as http:// — we force https:// for any non-localhost host.
+    """Return the OAuth callback URL.
+    In production (Railway), use RAILWAY_PUBLIC_DOMAIN to guarantee https://.
+    Locally, construct from request.base_url.
     """
+    if _RAILWAY_DOMAIN:
+        return f"https://{_RAILWAY_DOMAIN}/api/auth/callback"
+    # Local dev fallback
     base = str(request.base_url).rstrip("/")
-    host = request.url.hostname or ""
-    if host not in ("localhost", "127.0.0.1") and base.startswith("http://"):
-        base = "https://" + base[len("http://"):]
     return f"{base}/api/auth/callback"
 
 
