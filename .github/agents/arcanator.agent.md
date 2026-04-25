@@ -30,9 +30,13 @@ Audio upload (index.html + app.js)
 | `backend/services/prompt_builder.py` | YAKE + deep-translator ES→EN |
 | `backend/services/image_gen.py` | Bing scraping, download, fit-crop 1920×1080 |
 | `backend/services/video_gen.py` | FFmpeg zoompan, fade, concat demuxer, mux |
+| `backend/services/auth.py` | Google OAuth 2.0 flow, signed session cookie (itsdangerous) |
+| `backend/services/youtube.py` | YouTube Data API v3 upload (resumable, 5 MB chunks) |
 | `frontend/editor.js` | Timeline, candidates, lightbox, waveform sync, search panel |
 | `frontend/app.js` | Upload form, SSE progress, redirect to editor |
 | `TECHNICAL.md` | Full technical reference — always check this first |
+
+> Para la funcionalidad de Google Login y publicación en YouTube: leer `.github/agents/arcanator-youtube.agent.md`
 
 ## Data Model (critical)
 
@@ -49,13 +53,18 @@ Candidate at position 0 is always the **selected** one for export.
 ```
 POST   /api/jobs                                   create job (audio file + interval)
 GET    /api/jobs/{id}                              full job state
-GET    /api/jobs/{id}/stream                       SSE: state, slot_ready, export_progress, export_done, export_error
+GET    /api/jobs/{id}/stream                       SSE: state, slot_ready, export_progress, export_done, export_error, youtube_progress, youtube_done, youtube_error
 PATCH  /api/jobs/{id}/slots/{n}                    replace image with local file
 POST   /api/jobs/{id}/slots/{n}/select-candidate   rotate candidate to position 0
 POST   /api/jobs/{id}/slots/{n}/use-url            download external URL as candidate
 GET    /api/jobs/{id}/slots/{n}/search             Bing search for this slot
 GET    /api/search?q=&offset=                      free search (panel)
 POST   /api/jobs/{id}/export                       start export to MP4
+POST   /api/jobs/{id}/publish-youtube              publish final.mp4 to YouTube (requires auth cookie)
+GET    /api/auth/google                            redirect to Google consent screen
+GET    /api/auth/callback                          OAuth callback → set session cookie → redirect /
+POST   /api/auth/logout                            delete session cookie → redirect /
+GET    /api/auth/me                                { logged_in, name, email, picture }
 GET    /api/health                                 healthcheck
 ```
 
