@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typing import Dict, Optional
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -41,6 +41,41 @@ app.add_middleware(
 @app.get("/api/health")
 async def health():
     return JSONResponse({"status": "ok"})
+
+
+# ---------------------------------------------------------------------------
+# Auth endpoints (Google OAuth)
+# ---------------------------------------------------------------------------
+@app.get("/api/auth/google")
+async def login_google(request: Request):
+    from backend.services.auth import auth_google
+    return auth_google(request)
+
+
+@app.get("/api/auth/callback")
+async def login_callback(request: Request):
+    from backend.services.auth import auth_callback
+    return auth_callback(request)
+
+
+@app.post("/api/auth/logout")
+async def logout():
+    from backend.services.auth import auth_logout
+    return auth_logout()
+
+
+@app.get("/api/auth/me")
+async def me(request: Request):
+    from backend.services.auth import get_current_user
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"logged_in": False})
+    return JSONResponse({
+        "logged_in": True,
+        "name":    user.get("name"),
+        "email":   user.get("email"),
+        "picture": user.get("picture"),
+    })
 
 # ---------------------------------------------------------------------------
 # In-memory job store
@@ -404,6 +439,62 @@ async def export_video(job_id: str):
     thread = threading.Thread(target=_run_export, args=(job_id,), daemon=True)
     thread.start()
     return {"status": "exporting"}
+
+
+# ---------------------------------------------------------------------------
+# API: Publish to YouTube
+# ---------------------------------------------------------------------------
+@app.post("/api/jobs/{job_id}/publish-youtube")
+async def publish_youtube(job_id: str, request: Request, body: dict):
+    from backend.services.auth import require_user
+    from backend.services.youtube import upload_video
+
+    user = require_user(request)
+    job  = _get_job_or_404(job_id)
+
+    if job.get("status") != "done" or not job.get("download_url"):
+        raise HTTPException(status_code=400, detail="El vídeo aún no está exportado.")
+
+    video_path = OUTPUT_DIR / job_id / "final.mp4"
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail="Fichero de vídeo no encontrado.")
+
+    title       = (body.get("title") or "").strip() or "Vídeo Arcanator"
+    description = (body.get("description") or "").strip() or "Generado con Arcanator"
+
+    # Reset queue for YouTube events
+    with _lock:
+        _event_queues[job_id] = queue.Queue(maxsize=2000)
+
+    _update_job(job_id, youtube_status="uploading", youtube_url=None)
+
+    access_token  = user.get("access_token", "")
+    refresh_token = user.get("refresh_token", "")
+
+    def _do_upload():
+        try:
+            def on_progress(msg: str, pct: int):
+                _update_job(job_id, progress_message=msg, progress_percent=pct)
+                _push_event(job_id, "youtube_progress", {"message": msg, "percent": pct})
+
+            result = upload_video(
+                access_token=access_token,
+                refresh_token=refresh_token,
+                video_path=video_path,
+                title=title,
+                description=description,
+                on_progress=on_progress,
+            )
+            _update_job(job_id, youtube_status="done", youtube_url=result["youtube_url"])
+            _push_event(job_id, "youtube_done", {"youtube_url": result["youtube_url"]})
+        except Exception as exc:
+            _update_job(job_id, youtube_status="error")
+            _push_event(job_id, "youtube_error", {"message": str(exc)})
+            import traceback
+            traceback.print_exc()
+
+    threading.Thread(target=_do_upload, daemon=True).start()
+    return {"status": "uploading"}
 
 
 # ---------------------------------------------------------------------------

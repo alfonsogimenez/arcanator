@@ -9,6 +9,11 @@
 </head>
 <body class="bg-gray-950 text-gray-100 min-h-screen flex flex-col items-center justify-center p-6">
 
+  <!-- Auth header bar -->
+  <div class="fixed top-0 right-0 p-4 flex items-center gap-3 z-50" id="auth-bar">
+    <!-- Filled by app.js -->
+  </div>
+
   <!-- Logo / Header -->
   <div class="mb-10 text-center select-none">
     <h1 class="text-5xl font-black tracking-tight bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
@@ -57,6 +62,16 @@
         disabled
       >
         Generar Video
+      </button>
+
+      <!-- YouTube button (only visible when logged in) -->
+      <button
+        type="button"
+        id="submit-yt-btn"
+        class="w-full py-3 bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl font-semibold transition-colors text-white hidden"
+        disabled
+      >
+        🚀 Generar y publicar en YouTube
       </button>
     </form>
   </div>

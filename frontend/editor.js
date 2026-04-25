@@ -5,7 +5,8 @@
 (() => {
   // -- URL params -------------------------------------------
   const params = new URLSearchParams(window.location.search);
-  const jobId  = params.get('job');
+  const jobId     = params.get('job');
+  const autoYT    = params.get('yt') === '1';
   if (!jobId) { window.location.href = '/'; return; }
 
   // -- DOM refs ---------------------------------------------
@@ -18,9 +19,22 @@
   const timelineScroll  = document.getElementById('timeline-scroll');
   const exportBtn       = document.getElementById('export-btn');
   const downloadBtn     = document.getElementById('download-btn');
+  const publishYtBtn    = document.getElementById('publish-yt-btn');
   const exportWrap      = document.getElementById('export-progress-wrap');
   const exportBar       = document.getElementById('export-bar');
   const exportMsg       = document.getElementById('export-msg');
+  const authBar         = document.getElementById('auth-bar');
+  // YouTube modal
+  const ytModal         = document.getElementById('yt-modal');
+  const ytTitle         = document.getElementById('yt-title');
+  const ytDescription   = document.getElementById('yt-description');
+  const ytProgressWrap  = document.getElementById('yt-progress-wrap');
+  const ytBar           = document.getElementById('yt-bar');
+  const ytMsg           = document.getElementById('yt-msg');
+  const ytDoneWrap      = document.getElementById('yt-done-wrap');
+  const ytLink          = document.getElementById('yt-link');
+  const ytCancel        = document.getElementById('yt-cancel');
+  const ytSubmit        = document.getElementById('yt-submit');
   const replaceInput    = document.getElementById('replace-input');
   const searchPanel     = document.getElementById('search-panel');
   const panelClose      = document.getElementById('panel-close');
@@ -52,6 +66,44 @@
   let timelineBuiltScrollWidth = 0;
   let wavesurferReady          = false;
   let waveformZoomApplied      = false;
+  let currentUser              = null;  // auth state
+
+  // -- Auth -------------------------------------------------
+  async function checkAuth() {
+    try {
+      const res  = await fetch('/api/auth/me');
+      const data = await res.json();
+      currentUser = data.logged_in ? data : null;
+    } catch (_) {
+      currentUser = null;
+    }
+    renderAuthBar();
+  }
+
+  function renderAuthBar() {
+    if (!currentUser) {
+      authBar.innerHTML = `
+        <a href="/api/auth/google"
+           class="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-900 rounded-full text-xs font-semibold hover:bg-gray-100 transition-colors shadow">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" class="w-4 h-4">
+            <path fill="#EA4335" d="M24 9.5c3.5 0 6.5 1.2 8.9 3.2l6.6-6.6C35.4 2.5 30 0 24 0 14.7 0 6.7 5.5 2.9 13.5l7.7 6C12.5 13.4 17.8 9.5 24 9.5z"/>
+            <path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.4c-.5 2.8-2.2 5.2-4.7 6.8l7.3 5.7c4.3-4 6.8-9.9 6.8-16.5z"/>
+            <path fill="#FBBC05" d="M10.6 28.5c-.6-1.7-.9-3.5-.9-5.5s.3-3.8.9-5.5l-7.7-6C1 14.5 0 19.1 0 24s1 9.5 2.9 13.5l7.7-6z"/>
+            <path fill="#34A853" d="M24 48c6 0 11-2 14.7-5.3l-7.3-5.7c-2 1.4-4.6 2.2-7.4 2.2-6.2 0-11.5-3.9-13.4-9.5l-7.7 6C6.7 42.5 14.7 48 24 48z"/>
+          </svg>
+          Google
+        </a>`;
+    } else {
+      authBar.innerHTML = `
+        <img src="${currentUser.picture}" class="w-7 h-7 rounded-full border border-gray-600" alt="avatar" />
+        <span class="text-xs text-gray-300 hidden sm:inline">${currentUser.name}</span>
+        <form method="post" action="/api/auth/logout" class="inline">
+          <button type="submit" class="text-xs text-gray-500 hover:text-gray-300 underline">Salir</button>
+        </form>`;
+    }
+  }
+
+  checkAuth();
 
   // -- Bootstrap: load job data -----------------------------
   async function init() {
@@ -549,6 +601,7 @@
       downloadBtn.href = d.download_url;
       downloadBtn.classList.remove('hidden');
       exportBtn.classList.add('hidden');
+      onExportDone();
     });
     es.addEventListener('export_error', (e) => {
       es.close();
@@ -572,6 +625,7 @@
           downloadBtn.href = job.download_url;
           downloadBtn.classList.remove('hidden');
           exportBtn.classList.add('hidden');
+          onExportDone();
         }
         if (job.status === 'error') {
           clearInterval(id);
@@ -587,6 +641,86 @@
     exportBar.style.width = `${Math.min(100, percent)}%`;
     exportMsg.textContent = message;
   }
+
+  // -- Post-export: show YouTube button if logged in -------
+  function onExportDone() {
+    if (currentUser) {
+      publishYtBtn.classList.remove('hidden');
+    }
+    if (autoYT && currentUser) {
+      openYTModal();
+    }
+  }
+
+  // -- YouTube modal ----------------------------------------
+  function openYTModal(defaultTitle) {
+    ytTitle.value       = defaultTitle || document.title.replace(' – Editor', '') || 'Vídeo Arcanator';
+    ytDescription.value = 'Generado con Arcanator';
+    ytProgressWrap.classList.add('hidden');
+    ytDoneWrap.classList.add('hidden');
+    ytSubmit.disabled = false;
+    ytCancel.disabled = false;
+    ytModal.classList.remove('hidden');
+  }
+
+  publishYtBtn.addEventListener('click', () => openYTModal());
+  ytCancel.addEventListener('click', () => { ytModal.classList.add('hidden'); });
+
+  ytSubmit.addEventListener('click', async () => {
+    const title       = ytTitle.value.trim() || 'Vídeo Arcanator';
+    const description = ytDescription.value.trim() || 'Generado con Arcanator';
+
+    ytSubmit.disabled = true;
+    ytCancel.disabled = true;
+    ytProgressWrap.classList.remove('hidden');
+    ytDoneWrap.classList.add('hidden');
+    ytBar.style.width = '0%';
+    ytMsg.textContent = 'Iniciando…';
+
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/publish-youtube`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ title, description }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || 'Error al iniciar la publicación.');
+      }
+    } catch (err) {
+      ytMsg.textContent = `❌ ${err.message}`;
+      ytSubmit.disabled = false;
+      ytCancel.disabled = false;
+      return;
+    }
+
+    // Listen for YouTube SSE events
+    const es = new EventSource(`/api/jobs/${jobId}/stream`);
+    es.addEventListener('youtube_progress', (e) => {
+      const d = JSON.parse(e.data);
+      ytBar.style.width = `${d.percent}%`;
+      ytMsg.textContent = d.message;
+    });
+    es.addEventListener('youtube_done', (e) => {
+      es.close();
+      const d = JSON.parse(e.data);
+      ytBar.style.width = '100%';
+      ytMsg.textContent = '¡Publicado!';
+      ytLink.href = d.youtube_url;
+      ytDoneWrap.classList.remove('hidden');
+      ytCancel.textContent = 'Cerrar';
+      ytCancel.disabled = false;
+      ytSubmit.classList.add('hidden');
+    });
+    es.addEventListener('youtube_error', (e) => {
+      es.close();
+      const d = JSON.parse(e.data);
+      ytMsg.textContent = `❌ ${d.message}`;
+      ytSubmit.disabled = false;
+      ytCancel.disabled = false;
+    });
+    es.onerror = () => { es.close(); };
+  });
 
   // -- Helpers ---------------------------------------------
   function formatTime(secs) {
