@@ -1,4 +1,4 @@
-﻿"""
+"""
 Image retrieval via Bing Images scraping (no API key required).
 Searches for real photos related to the podcast topic.
 Returns 5 candidate images per slot so the user can choose.
@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import httpx
 from PIL import Image, ImageDraw
 
-from services.prompt_builder import build_search_query
+from backend.services.prompt_builder import build_search_query
 
 _MAX_WORKERS     = 2    # keep low to avoid Bing rate limiting
 _CANDIDATES      = 3    # images to download per slot
@@ -45,7 +45,7 @@ def _scrape_bing_image_entries(query: str, count: int = 20) -> List[Dict[str, st
         entries = []
         for m in re.finditer(r'&quot;murl&quot;:&quot;(https?://[^&]+)&quot;', resp.text):
             murl = m.group(1)
-            # purl comes BEFORE murl in Bing's JSON object — search backwards
+            # purl comes BEFORE murl in Bing's JSON object � search backwards
             start = max(0, m.start() - 1200)
             snippet = resp.text[start: m.end() + 100]
             purl_match = re.search(r'&quot;purl&quot;:&quot;(https?://[^&]+)&quot;', snippet)
