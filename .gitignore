@@ -6,3 +6,8 @@ backend/services/__pycache__/
 *.pyo
 .env
 *.log
+
+# Credenciales y secretos
+docs/youtube.md
+*.secret
+client_secret*.json
