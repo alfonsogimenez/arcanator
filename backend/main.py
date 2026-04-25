@@ -110,10 +110,15 @@ def _load_jobs_from_disk():
             job_id = data.get("id")
             if not job_id:
                 continue
-            # Jobs that were in-flight when the server died are unrecoverable
-            if data.get("status") in ("queued", "transcribing", "generating_images", "exporting"):
+            # Jobs that were in-flight when the server died
+            status = data.get("status", "")
+            if status in ("queued", "transcribing", "generating_images"):
                 data["status"] = "error"
                 data["error"] = "El servidor se reinici\u00f3 durante el procesamiento."
+            elif status == "exporting":
+                # Images are already on disk — allow re-export
+                data["status"] = "ready"
+                data["error"] = None
             with _lock:
                 _jobs[job_id] = data
                 if job_id not in _event_queues:
@@ -428,6 +433,12 @@ async def use_url_for_slot(job_id: str, index: int, body: dict):
 @app.post("/api/jobs/{job_id}/export")
 async def export_video(job_id: str):
     job = _get_job_or_404(job_id)
+    # Allow re-export if a previous export was interrupted (status=error but images exist)
+    if job["status"] == "error" and job.get("slots") and all(
+        s.get("image_path") for s in job["slots"]
+    ):
+        _update_job(job_id, status="ready", error=None)
+        job = _get_job_or_404(job_id)
     if job["status"] not in ("ready", "done"):
         raise HTTPException(status_code=400, detail="El job no está listo para exportar.")
 
@@ -516,6 +527,9 @@ def _process_job(job_id: str):
         _push_event(job_id, "progress", {"message": "Transcribiendo audio...", "percent": 5})
 
         slots = transcribe_audio(audio_path, interval)
+        # Free Whisper model from memory — FFmpeg export needs the RAM
+        from backend.services.transcription import unload_model
+        unload_model()
         _update_job(job_id, slots=slots)
         _push_event(job_id, "progress", {"message": f"Transcripción completa · {len(slots)} segmentos.", "percent": 15})
 

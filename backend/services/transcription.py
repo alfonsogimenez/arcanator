@@ -2,6 +2,7 @@
 Transcription service using faster-whisper (local, no API key required).
 Language is fixed to Spanish for maximum accuracy and speed.
 """
+import gc
 import threading
 from typing import List, Dict, Any
 
@@ -17,6 +18,16 @@ def _get_model():
             # base model: ~147MB download on first run, good accuracy for Spanish podcasts
             _model = WhisperModel("base", device="cpu", compute_type="int8")
     return _model
+
+
+def unload_model():
+    """Release Whisper model from memory to free RAM for FFmpeg export."""
+    global _model
+    with _model_lock:
+        if _model is not None:
+            del _model
+            _model = None
+            gc.collect()
 
 
 def transcribe_audio(audio_path: str, interval_seconds: int) -> List[Dict[str, Any]]:
