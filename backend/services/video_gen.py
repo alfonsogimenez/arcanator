@@ -61,9 +61,9 @@ def _build_zoompan(frames: int, pan_x: str, pan_y: str) -> str:
     # Using incremental expression: zoom is maintained across frames by the filter
     zoom_expr = "min(zoom+0.0007,1.18)"
 
-    # Scale source image to 2× before zoompan so the crop always has pixels
+    # Scale source image to 1.5× before zoompan (2× uses too much RAM on low-memory servers)
     vf = (
-        f"scale={WIDTH * 2}:{HEIGHT * 2}:flags=lanczos,"
+        f"scale={int(WIDTH * 1.5)}:{int(HEIGHT * 1.5)}:flags=lanczos,"
         f"zoompan="
         f"z='{zoom_expr}':"
         f"x='{pan_x}':"
@@ -101,7 +101,8 @@ def _generate_segment(
         "-vf", vf,
         "-c:v", "libx264",
         "-crf", str(CRF),
-        "-preset", "ultrafast",   # fast encoding; quality governed by CRF
+        "-preset", "ultrafast",
+        "-threads", "1",          # limit threads to reduce peak RAM usage
         "-pix_fmt", "yuv420p",
         "-r", str(FPS),
         "-an",
@@ -136,6 +137,7 @@ def _generate_segment_simple(
             f"fade=t=out:st={max(0.0, duration - FADE_DURATION):.3f}:d={FADE_DURATION}"
         ),
         "-c:v", "libx264", "-crf", str(CRF), "-preset", "ultrafast",
+        "-threads", "1",
         "-pix_fmt", "yuv420p", "-r", str(FPS), "-an",
         str(output_path),
     ]
