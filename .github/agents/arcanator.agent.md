@@ -83,6 +83,39 @@ GET    /api/health                                 healthcheck
 4. When running the server locally: activate venv first (`venv\Scripts\activate`), ensure FFmpeg is in PATH
 5. After making changes, validate with `get_errors` and run the server to confirm
 
+## Railway Deployment
+
+- **URL pública**: `https://arcanator-production.up.railway.app`
+- **Project ID**: `9c2bce08-81f3-4653-8a49-4cf38a45822b`
+- **Service ID**: `238279d8-f9b0-45e7-ac76-84eec129c637`
+- **Panel**: `https://railway.com/project/9c2bce08-81f3-4653-8a49-4cf38a45822b`
+- **Cuenta Railway**: `gimenez.ucendo@gmail.com`
+- **Variable de entorno**: `OUTPUT_DIR=/data/output`
+
+> **Pendiente**: añadir volumen persistente en `/data/output` desde el panel web de Railway
+> (Railway → proyecto → servicio → Storage → Add Volume → Mount path: `/data/output`)
+
+### Comandos Railway CLI habituales
+
+```powershell
+cd C:\Arcanator
+
+# Ver estado del deploy
+railway status
+
+# Subir nuevo deploy
+railway up --detach
+
+# Ver logs en tiempo real
+railway logs
+
+# Ver variables de entorno
+railway variables
+
+# Abrir panel web
+railway open
+```
+
 ## GitHub Repository
 
 - **Repo**: `https://github.com/alfonsogimenez/arcanator`
