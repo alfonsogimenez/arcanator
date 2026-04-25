@@ -95,8 +95,7 @@ GET    /api/health                                 healthcheck
 - **Volumen**: `arcanator-volume` montado en `/data/output`
 - **Estado**: ✅ Online y funcionando
 
-> **Pendiente**: añadir volumen persistente en `/data/output` desde el panel web de Railway
-> (Railway → proyecto → servicio → Storage → Add Volume → Mount path: `/data/output`)
+> Para conocimiento completo del deploy (errores, soluciones, procedimientos): leer `.github/agents/railway-deploy.md`
 
 ### Comandos Railway CLI habituales
 
