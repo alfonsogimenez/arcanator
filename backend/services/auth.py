@@ -39,8 +39,14 @@ _signer = URLSafeSerializer(SECRET_KEY, salt="session")
 
 
 def _get_redirect_uri(request: Request) -> str:
-    """Build the OAuth callback URL from the incoming request host."""
+    """Build the OAuth callback URL from the incoming request host.
+    Railway runs behind a TLS-terminating proxy, so request.base_url
+    arrives as http:// — we force https:// for any non-localhost host.
+    """
     base = str(request.base_url).rstrip("/")
+    host = request.url.hostname or ""
+    if host not in ("localhost", "127.0.0.1") and base.startswith("http://"):
+        base = "https://" + base[len("http://"):]
     return f"{base}/api/auth/callback"
 
 
