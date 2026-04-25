@@ -91,6 +91,9 @@ GET    /api/health                                 healthcheck
 - **Panel**: `https://railway.com/project/9c2bce08-81f3-4653-8a49-4cf38a45822b`
 - **Cuenta Railway**: `gimenez.ucendo@gmail.com`
 - **Variable de entorno**: `OUTPUT_DIR=/data/output`
+- **Variable de entorno**: `PORT=8000`
+- **Volumen**: `arcanator-volume` montado en `/data/output`
+- **Estado**: ✅ Online y funcionando
 
 > **Pendiente**: añadir volumen persistente en `/data/output` desde el panel web de Railway
 > (Railway → proyecto → servicio → Storage → Add Volume → Mount path: `/data/output`)
