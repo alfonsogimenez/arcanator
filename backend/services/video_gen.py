@@ -237,8 +237,17 @@ def assemble_video(
     on_progress("Añadiendo audio y generando MP4 final...", 90)
 
     # Build optional drawtext overlay (seconds 2–7)
-    # Font path works on Debian-based Docker images (fonts-dejavu-core installed)
-    _FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    # Try multiple font locations: Debian/Docker first, then Windows fallbacks.
+    import os as _os
+    _FONT_CANDIDATES = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  # Debian/Docker
+        "C:/Windows/Fonts/arialbd.ttf",   # Windows – Arial Bold
+        "C:/Windows/Fonts/arial.ttf",     # Windows – Arial
+        "C:/Windows/Fonts/calibrib.ttf",  # Windows – Calibri Bold
+        "C:/Windows/Fonts/calibri.ttf",   # Windows – Calibri
+    ]
+    _font_found = next((p for p in _FONT_CANDIDATES if _os.path.exists(p)), None)
+
     vf_overlay = ""
     if overlay_text:
         # Escape special characters for FFmpeg drawtext
@@ -248,8 +257,12 @@ def assemble_video(
             .replace("'", "\\'")
             .replace(":", "\\:")
         )
-        import os as _os
-        font_clause = f"fontfile={_FONT_PATH}:" if _os.path.exists(_FONT_PATH) else ""
+        if _font_found:
+            # FFmpeg drawtext: colon in Windows drive letter must be escaped as \:
+            _font_ffmpeg = _font_found.replace("\\", "/").replace(":", "\\:")
+            font_clause = f"fontfile='{_font_ffmpeg}':"
+        else:
+            font_clause = ""
         vf_overlay = (
             f"setpts=PTS-STARTPTS,"
             f"drawtext="
