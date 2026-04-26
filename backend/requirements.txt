@@ -6,6 +6,3 @@ python-multipart==0.0.9
 yake==0.4.8
 deep-translator==1.11.4
 Pillow==10.3.0
-google-auth-oauthlib==1.2.0
-google-api-python-client==2.131.0
-itsdangerous==2.2.0

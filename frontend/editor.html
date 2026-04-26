@@ -17,9 +17,6 @@
     </a>
 
     <div class="flex items-center gap-3">
-      <!-- Auth bar (filled by editor.js) -->
-      <div id="auth-bar" class="flex items-center gap-2"></div>
-
       <!-- Export button -->
       <button
         id="export-btn"
@@ -37,13 +34,6 @@
       >
         ⬇ Descargar MP4
       </a>
-      <!-- YouTube publish button (hidden until export done + logged in) -->
-      <button
-        id="publish-yt-btn"
-        class="hidden px-5 py-2 bg-red-600 hover:bg-red-500 rounded-lg font-semibold text-sm transition-colors"
-      >
-        📹 Publicar en YouTube
-      </button>
     </div>
   </header>
 
@@ -177,55 +167,6 @@
     <button id="lightbox-close"
       class="absolute top-4 right-4 w-10 h-10 flex items-center justify-center bg-gray-800 hover:bg-gray-700 text-white rounded-full text-xl">✕</button>
     <img id="lightbox-img" class="max-h-[90vh] max-w-[90vw] object-contain rounded-xl shadow-2xl" src="" alt="" />
-  </div>
-
-  <!-- ── YouTube publish modal ─────────────────────────── -->
-  <div id="yt-modal"
-    class="hidden fixed inset-0 bg-black/70 z-[110] flex items-center justify-center"
-    style="backdrop-filter:blur(6px)">
-    <div class="bg-gray-900 border border-gray-700 rounded-2xl p-8 w-full max-w-lg shadow-2xl space-y-5">
-      <h2 class="text-lg font-bold text-white">Publicar en YouTube</h2>
-
-      <div class="space-y-4">
-        <div>
-          <label class="block text-sm text-gray-400 mb-1">Título</label>
-          <input id="yt-title" type="text" maxlength="100"
-            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:border-red-500 focus:outline-none"
-            placeholder="Título del vídeo…" />
-        </div>
-        <div>
-          <label class="block text-sm text-gray-400 mb-1">Descripción</label>
-          <textarea id="yt-description" rows="3" maxlength="5000"
-            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:border-red-500 focus:outline-none resize-none"
-            placeholder="Descripción del vídeo…"></textarea>
-        </div>
-        <p class="text-xs text-gray-500">El vídeo se publicará como <strong class="text-gray-300">privado</strong>. Puedes cambiarlo después en YouTube Studio.</p>
-      </div>
-
-      <!-- Upload progress (hidden until upload starts) -->
-      <div id="yt-progress-wrap" class="hidden space-y-2">
-        <div class="w-full bg-gray-800 rounded-full h-2 overflow-hidden">
-          <div id="yt-bar" class="h-2 bg-gradient-to-r from-red-500 to-rose-400 rounded-full transition-all duration-300" style="width:0%"></div>
-        </div>
-        <p id="yt-msg" class="text-xs text-gray-400">Iniciando…</p>
-      </div>
-
-      <!-- YouTube link (shown when done) -->
-      <div id="yt-done-wrap" class="hidden text-center space-y-2">
-        <p class="text-green-400 font-semibold">¡Vídeo publicado!</p>
-        <a id="yt-link" href="#" target="_blank" rel="noopener noreferrer"
-          class="inline-block px-5 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm font-semibold transition-colors">
-          ▶ Ver en YouTube
-        </a>
-      </div>
-
-      <div class="flex justify-end gap-3">
-        <button id="yt-cancel" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition-colors">Cancelar</button>
-        <button id="yt-submit" class="px-5 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-40 rounded-lg text-sm font-semibold transition-colors">
-          Publicar
-        </button>
-      </div>
-    </div>
   </div>
 
   <script src="/editor.js"></script>
