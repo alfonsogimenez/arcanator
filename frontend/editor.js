@@ -17,6 +17,7 @@
   const volumeSlider    = document.getElementById('volume');
   const timelineLoading = document.getElementById('timeline-loading');
   const timelineScroll  = document.getElementById('timeline-scroll');
+  const columnsRow      = document.getElementById('columns-row');
   const addColumnBtn    = document.getElementById('add-column-btn');
   const exportBtn       = document.getElementById('export-btn');
   const downloadBtn     = document.getElementById('download-btn');
@@ -142,6 +143,8 @@
       barGap:        1,
       barRadius:     2,
       normalize:     true,
+      fillParent:    false,  // canvas width = audioDuration * zoom; fits exactly in #waveform-row
+      autoScroll:    false,  // scroll driven by #timeline-scroll
       url:           job.audio_url,
     });
 
@@ -150,7 +153,9 @@
       wavesurferReady = true;
       totalTimeEl.textContent = formatTime(dur);
       exportBtn.disabled = false;
-      syncZoom();  // apply current PX_PER_SEC to waveform once it's ready
+      // Set waveform container width = total columns width so both scroll together
+      _setWaveformWidth();
+      syncZoom();
     });
     ws.on('timeupdate', (t) => {
       currentTimeEl.textContent = formatTime(t);
@@ -164,8 +169,8 @@
 
   // -- Timeline builder ------------------------------------
   function buildTimeline(slotsArr) {
-    timelineScroll.innerHTML = '';
-    slotsArr.forEach((slot, i) => timelineScroll.appendChild(createCard(slot, i)));
+    columnsRow.innerHTML = '';
+    slotsArr.forEach((slot, i) => columnsRow.appendChild(createCard(slot, i)));
     timelineLoading.classList.add('hidden');
     timelineScroll.style.display = 'flex';
     timelineScroll.classList.remove('hidden');
@@ -185,7 +190,7 @@
     // ---- Card ----
     const card = document.createElement('div');
     card.id        = `card-${i}`;
-    card.className = 'slot-card h-full flex flex-col rounded-xl overflow-hidden border border-gray-800 bg-gray-900 select-none';
+    card.className = 'slot-card h-full flex flex-col overflow-hidden border-0 bg-gray-900 select-none';
 
     // ---- Header: timestamp + text ----
     const header = document.createElement('div');
@@ -425,6 +430,7 @@
 
   // -- Use external URL (from search panel or drag) --------
   async function useExternalUrl(slotIdx, url, pageUrl) {
+    const wasEmpty = !slots[slotIdx]?.image_url && !(slots[slotIdx]?.candidates?.length);
     const card = document.getElementById(`card-${slotIdx}`);
     if (card) card.style.opacity = '0.6';
     try {
@@ -441,6 +447,10 @@
       const container = document.getElementById(`imgcol-${slotIdx}`);
       if (container) renderCandidates(container, slots[slotIdx], slotIdx);
       closePanelIfSameSlot(slotIdx);
+      // If the slot was empty and is the last one, add a new column automatically
+      if (wasEmpty && slotIdx === slots.length - 1) addColumn();
+      // Resume playback after selecting an image
+      if (ws) ws.play();
     } catch (err) {
       alert(`Error al usar la imagen: ${err.message}`);
     } finally {
@@ -453,6 +463,9 @@
     panelSlotIdx = slotIdx;
     const autoQuery = slots[slotIdx]?.prompt || slots[slotIdx]?.text || '';
     panelSearchInput.value = autoQuery;
+
+    // Pause playback while browsing images
+    if (ws && ws.isPlaying()) ws.pause();
 
     // Show panel
     searchPanel.style.transform = 'translateX(0)';
@@ -575,52 +588,45 @@
   panelBackdrop.addEventListener('click', closePanel);
 
   // -- Timeline sync with playhead --------------------------
+  // Width helper: waveform-row and #waveform must equal total columns width
+  function _setWaveformWidth() {
+    if (!audioDuration) return;
+    const w = Math.ceil(audioDuration * PX_PER_SEC);
+    const wfRow = document.getElementById('waveform-row');
+    const wfEl  = document.getElementById('waveform');
+    if (wfRow) wfRow.style.width = w + 'px';
+    if (wfEl)  wfEl.style.width  = w + 'px';
+  }
+
+  // Scroll timeline-scroll so playhead is centred in the viewport
+  function _scrollToTime(t) {
+    const half = timelineScroll.clientWidth / 2;
+    timelineScroll.scrollLeft = Math.max(0, t * PX_PER_SEC - half);
+  }
+
   function syncTimeline(currentTime) {
+    // Update active card highlight
     const idx = slots.findIndex((s) => currentTime >= s.start && currentTime < s.end);
-    if (idx === -1 || idx === activeIndex) return;
-    if (activeIndex >= 0) {
-      const prev = document.getElementById(`card-${activeIndex}`);
-      if (prev) prev.classList.remove('card-active');
+    if (idx !== activeIndex) {
+      if (activeIndex >= 0) {
+        const prev = document.getElementById(`card-${activeIndex}`);
+        if (prev) prev.classList.remove('card-active');
+      }
+      if (idx >= 0) {
+        const card = document.getElementById(`card-${idx}`);
+        if (card) card.classList.add('card-active');
+      }
+      activeIndex = idx;
     }
-    activeIndex = idx;
-    const card = document.getElementById(`card-${idx}`);
-    if (card) {
-      card.classList.add('card-active');
-      card.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-    }
+    _scrollToTime(currentTime);
   }
 
   // -- Zoom: keep waveform + column widths in sync ---------
-  // Called whenever PX_PER_SEC changes OR wavesurfer becomes ready.
-  let _scrollSyncBound = false;
+  let _scrollSyncBound = false;  // kept to avoid removing too much; scroll sync no longer needed
   function syncZoom() {
-    // Update waveform zoom
-    if (ws && audioDuration > 0) {
-      ws.zoom(PX_PER_SEC);
-    }
-    // Update label
+    if (ws && audioDuration > 0) ws.zoom(PX_PER_SEC);
     if (wfZoomLabel) wfZoomLabel.textContent = `${PX_PER_SEC}px`;
-
-    // Bind scroll sync once (after waveform is zoomed, wrapper becomes scrollable)
-    if (!_scrollSyncBound && ws) {
-      _scrollSyncBound = true;
-      // Small delay so WaveSurfer renders the zoomed waveform before we grab the wrapper
-      setTimeout(() => {
-        const wfScrollEl = ws.getWrapper ? ws.getWrapper() : document.querySelector('#waveform > div');
-        if (!wfScrollEl) return;
-        let syncing = false;
-        timelineScroll.addEventListener('scroll', () => {
-          if (syncing) return; syncing = true;
-          wfScrollEl.scrollLeft = timelineScroll.scrollLeft;
-          requestAnimationFrame(() => { syncing = false; });
-        }, { passive: true });
-        wfScrollEl.addEventListener('scroll', () => {
-          if (syncing) return; syncing = true;
-          timelineScroll.scrollLeft = wfScrollEl.scrollLeft;
-          requestAnimationFrame(() => { syncing = false; });
-        }, { passive: true });
-      }, 100);
-    }
+    _setWaveformWidth();
   }
 
   // -- Lightbox ---------------------------------------------
@@ -678,6 +684,14 @@
 
   // -- Play / Pause ----------------------------------------
   playBtn.addEventListener('click', () => ws && ws.playPause());
+
+  const stopBtn = document.getElementById('stop-btn');
+  stopBtn.addEventListener('click', () => {
+    if (!ws) return;
+    ws.pause();
+    ws.seekTo(0);
+    _scrollToTime(0);
+  });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !lightbox.classList.contains('hidden')) {
       closeLightbox(); return;
@@ -699,6 +713,9 @@
       }
     });
     syncZoom();
+    _setWaveformWidth();
+    // Re-center scroll on current playhead after zoom
+    if (ws) _scrollToTime(ws.getCurrentTime ? ws.getCurrentTime() : 0);
   });
   volumeSlider.addEventListener('input', () => { if (ws) ws.setVolume(Number(volumeSlider.value)); });
 
@@ -743,10 +760,10 @@
     };
     slots.push(newSlot);
     const wrapper = createCard(newSlot, slots.length - 1);
-    timelineScroll.appendChild(wrapper);
+    columnsRow.appendChild(wrapper);
     wrapper.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'end' });
     saveSlots();
-    syncZoom();  // extend waveform to cover new column
+    syncZoom();  // update waveform width + zoom
   }
 
   // -- Delete column ----------------------------------------

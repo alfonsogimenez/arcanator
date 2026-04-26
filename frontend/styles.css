@@ -125,6 +125,7 @@
   position: relative;
   flex-shrink: 0;
   height: 100%;
+  border-right: 1px solid #374151;  /* visual separator instead of gap */
 }
 
 /* ── Empty image placeholder ────────────────────────────── */
@@ -162,8 +163,9 @@
   background: #111827;
   border-radius: 0;
 }
-#waveform::-webkit-scrollbar { display: none; }
-#waveform { scrollbar-width: none; }
+/* Hide WaveSurfer's own internal scrollbar — scroll is driven by #timeline-scroll */
+#waveform [part="scroll"]::-webkit-scrollbar { display: none; }
+#waveform [part="scroll"] { scrollbar-width: none; }
 
 /* ── Export progress bar track ───────────────────────────── */
 #export-progress-wrap {

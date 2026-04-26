@@ -54,6 +54,11 @@
         title="Reproducir / Pausar (Espacio)">
         ▶
       </button>
+      <button id="stop-btn"
+        class="w-10 h-10 flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded-full transition-colors text-lg"
+        title="Detener y volver al inicio">
+        ⏹
+      </button>
 
       <div class="flex items-center gap-1 text-sm text-gray-400 font-mono tabular-nums">
         <span id="current-time">0:00:00</span>
@@ -77,8 +82,6 @@
       </div>
     </div>
 
-    <!-- WaveSurfer container -->
-    <div id="waveform" class="w-full cursor-pointer" style="height:80px;overflow-x:auto;overflow-y:hidden;"></div>
   </section>
 
   <!-- ── Export progress bar (hidden until export starts) ── -->
@@ -107,18 +110,25 @@
     <span id="overlay-text-error" class="text-xs text-red-400 hidden">⚠ obligatorio</span>
   </div>
 
-  <!-- ── Timeline strip ─────────────────────────────────── -->
-  <main class="flex-1 overflow-y-hidden">
+  <!-- ── Timeline strip ───────────────────────────────────── -->
+  <main class="flex-1 overflow-y-hidden flex flex-col">
     <!-- Loading placeholder -->
     <div id="timeline-loading" class="flex items-center justify-center h-full text-gray-500 text-sm gap-3">
       <div class="spinner"></div>
       <span>Cargando timeline…</span>
     </div>
 
-    <!-- Timeline scroll container -->
+    <!-- Single scroll container: waveform row + image columns move together -->
     <div id="timeline-scroll"
-      class="hidden h-full overflow-x-auto overflow-y-hidden px-4 py-4 flex gap-3 items-start timeline-scroll-container"
+      class="hidden h-full overflow-x-auto overflow-y-hidden flex flex-col timeline-scroll-container"
       style="display:none">
+      <!-- Waveform row: same total width as all columns combined (set by JS) -->
+      <div id="waveform-row" class="shrink-0 bg-gray-900 border-b border-gray-700 cursor-pointer" style="height:88px; position:relative;">
+        <div id="waveform" style="height:80px; overflow:hidden; position:absolute; top:4px; left:0;"></div>
+      </div>
+      <!-- Image columns row -->
+      <div id="columns-row" class="flex flex-1 items-start py-4">
+      </div>
     </div>
   </main>
 

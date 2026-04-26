@@ -55,11 +55,10 @@ def check_ffmpeg() -> str:
 
 def _build_zoompan(frames: int, pan_x: str, pan_y: str) -> str:
     """Build zoompan + fade filter string for one segment."""
-    fade_f = int(FADE_DURATION * FPS)
-
-    # Zoom linearly from 1.0 to 1.18 over the segment duration
-    # Using incremental expression: zoom is maintained across frames by the filter
-    zoom_expr = "min(zoom+0.0007,1.18)"
+    # Deterministic time-based zoom: each frame computes its exact value from on/d,
+    # avoiding the floating-point accumulation of the incremental 'zoom+delta' pattern
+    # which causes the visible micro-jitter on playback.
+    zoom_expr = f"1.0+0.18*on/{frames}"
 
     # Scale source image to 1.5× before zoompan (2× uses too much RAM on low-memory servers)
     vf = (

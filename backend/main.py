@@ -590,19 +590,37 @@ def _process_job(job_id: str):
         audio_duration = _get_audio_duration(Path(audio_path), ffmpeg)
         audio_end = round(audio_duration, 2) if audio_duration > 0 else 0.0
 
-        initial_slots = [
-            {
+        slot_duration = 5.0
+        initial_slots = []
+        if audio_end <= 0:
+            initial_slots.append({
                 "index": 0,
                 "start": 0.0,
-                "end": min(5.0, audio_end),
+                "end": slot_duration,
                 "text": "",
                 "prompt": "",
                 "image_url": None,
                 "image_path": None,
                 "custom": False,
                 "candidates": [],
-            }
-        ]
+            })
+        else:
+            t = 0.0
+            idx = 0
+            while t < audio_end:
+                initial_slots.append({
+                    "index": idx,
+                    "start": round(t, 2),
+                    "end": round(min(t + slot_duration, audio_end), 2),
+                    "text": "",
+                    "prompt": "",
+                    "image_url": None,
+                    "image_path": None,
+                    "custom": False,
+                    "candidates": [],
+                })
+                t += slot_duration
+                idx += 1
 
         _update_job(job_id,
                     slots=initial_slots,
