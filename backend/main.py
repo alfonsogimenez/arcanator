@@ -526,8 +526,30 @@ def _process_job(job_id: str):
         from backend.services.transcription import unload_model
         unload_model()
 
-        # Slots start with no images — user adds them manually in the editor
-        _update_job(job_id, slots=slots, status="ready", progress_message="¡Listo para revisar!", progress_percent=100)
+        # Keep full transcription as reference but start the editor with a
+        # single empty column covering the whole audio duration.
+        # The user will add and resize columns manually.
+        audio_end = round(slots[-1]["end"], 2) if slots else 0.0
+        initial_slots = [
+            {
+                "index": 0,
+                "start": 0.0,
+                "end": audio_end,
+                "text": "",
+                "prompt": "",
+                "image_url": None,
+                "image_path": None,
+                "custom": False,
+                "candidates": [],
+            }
+        ]
+
+        _update_job(job_id,
+                    slots=initial_slots,
+                    transcript_slots=slots,       # full transcript kept for reference
+                    status="ready",
+                    progress_message="¡Listo para revisar!",
+                    progress_percent=100)
         _push_event(job_id, "progress", {"message": "Transcripción completa. Abriendo editor...", "percent": 100})
         _push_event(job_id, "done", {"job_id": job_id})
 
