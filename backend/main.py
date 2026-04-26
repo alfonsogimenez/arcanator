@@ -506,30 +506,19 @@ async def export_video(job_id: str):
 # ---------------------------------------------------------------------------
 def _process_job(job_id: str):
     try:
-        from backend.services.transcription import transcribe_audio
+        from backend.services.video_gen import _get_audio_duration, check_ffmpeg
 
         with _lock:
             job = dict(_jobs[job_id])
         audio_path = job["audio_path"]
-        interval = job["interval"]
 
-        # Step 1 – Transcription
-        _update_job(job_id, status="transcribing", progress_message="Transcribiendo audio (esto puede tardar un momento la primera vez)...", progress_percent=5)
-        _push_event(job_id, "progress", {"message": "Transcribiendo audio...", "percent": 5})
+        _update_job(job_id, status="transcribing", progress_message="Analizando audio...", progress_percent=50)
+        _push_event(job_id, "progress", {"message": "Analizando audio...", "percent": 50})
 
-        def on_transcription_progress(message: str, percent: int):
-            _update_job(job_id, progress_message=message, progress_percent=percent)
-            _push_event(job_id, "progress", {"message": message, "percent": percent})
+        ffmpeg = check_ffmpeg()
+        audio_duration = _get_audio_duration(Path(audio_path), ffmpeg)
+        audio_end = round(audio_duration, 2) if audio_duration > 0 else 0.0
 
-        slots = transcribe_audio(audio_path, interval, on_progress=on_transcription_progress)
-        # Free Whisper model from memory — FFmpeg export needs the RAM
-        from backend.services.transcription import unload_model
-        unload_model()
-
-        # Keep full transcription as reference but start the editor with a
-        # single empty column covering the whole audio duration.
-        # The user will add and resize columns manually.
-        audio_end = round(slots[-1]["end"], 2) if slots else 0.0
         initial_slots = [
             {
                 "index": 0,
@@ -546,11 +535,10 @@ def _process_job(job_id: str):
 
         _update_job(job_id,
                     slots=initial_slots,
-                    transcript_slots=slots,       # full transcript kept for reference
                     status="ready",
-                    progress_message="¡Listo para revisar!",
+                    progress_message="¡Listo para editar!",
                     progress_percent=100)
-        _push_event(job_id, "progress", {"message": "Transcripción completa. Abriendo editor...", "percent": 100})
+        _push_event(job_id, "progress", {"message": "Listo. Abriendo editor...", "percent": 100})
         _push_event(job_id, "done", {"job_id": job_id})
 
     except Exception as exc:
