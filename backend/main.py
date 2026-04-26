@@ -471,10 +471,10 @@ async def export_video(job_id: str):
 # Background workers
 # ---------------------------------------------------------------------------
 def _process_job(job_id: str):
-    from backend.services.transcription import transcribe_audio
-    from backend.services.image_gen import generate_all_images
-
     try:
+        from backend.services.transcription import transcribe_audio
+        from backend.services.image_gen import generate_all_images
+
         with _lock:
             job = dict(_jobs[job_id])
         audio_path = job["audio_path"]
@@ -485,7 +485,11 @@ def _process_job(job_id: str):
         _update_job(job_id, status="transcribing", progress_message="Transcribiendo audio (esto puede tardar un momento la primera vez)...", progress_percent=5)
         _push_event(job_id, "progress", {"message": "Transcribiendo audio...", "percent": 5})
 
-        slots = transcribe_audio(audio_path, interval)
+        def on_transcription_progress(message: str, percent: int):
+            _update_job(job_id, progress_message=message, progress_percent=percent)
+            _push_event(job_id, "progress", {"message": message, "percent": percent})
+
+        slots = transcribe_audio(audio_path, interval, on_progress=on_transcription_progress)
         # Free Whisper model from memory — FFmpeg export needs the RAM
         from backend.services.transcription import unload_model
         unload_model()

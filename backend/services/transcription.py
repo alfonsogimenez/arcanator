@@ -30,15 +30,20 @@ def unload_model():
             gc.collect()
 
 
-def transcribe_audio(audio_path: str, interval_seconds: int) -> List[Dict[str, Any]]:
+def transcribe_audio(
+    audio_path: str,
+    interval_seconds: int,
+    on_progress=None,  # optional callable(message: str, percent: int)
+) -> List[Dict[str, Any]]:
     """
     Transcribe audio file and group segments into chunks of ~interval_seconds.
     Returns a list of slot dicts with keys: index, start, end, text, prompt,
     image_url, image_path, custom.
+    on_progress(message, percent) is called periodically during transcription.
     """
     model = _get_model()
 
-    segments_iter, _info = model.transcribe(
+    segments_iter, info = model.transcribe(
         audio_path,
         language="es",
         beam_size=5,
@@ -47,8 +52,18 @@ def transcribe_audio(audio_path: str, interval_seconds: int) -> List[Dict[str, A
         word_timestamps=False,
     )
 
-    # Materialise the lazy generator
-    raw_segments = list(segments_iter)
+    total_duration = info.duration or 1.0
+
+    # Consume generator incrementally so we can report progress
+    raw_segments: List[Any] = []
+    for seg in segments_iter:
+        raw_segments.append(seg)
+        if on_progress:
+            pct = min(14, 5 + int(seg.end / total_duration * 9))
+            on_progress(
+                f"Transcribiendo… {int(seg.end / total_duration * 100)}% del audio",
+                pct,
+            )
 
     if not raw_segments:
         return []
