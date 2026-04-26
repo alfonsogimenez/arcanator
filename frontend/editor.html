@@ -61,11 +61,12 @@
         <span id="total-time">0:00:00</span>
       </div>
 
-      <!-- Zoom waveform -->
+      <!-- Zoom waveform + timeline (sincronizados) -->
       <div class="flex items-center gap-2 ml-auto">
         <span class="text-xs text-gray-500">Zoom:</span>
-        <input type="range" id="wf-zoom" min="1" max="200" value="1"
-          class="w-28 accent-violet-500 cursor-pointer" title="Zoom de forma de onda" />
+        <input type="range" id="wf-zoom" min="10" max="120" value="30" step="5"
+          class="w-28 accent-violet-500 cursor-pointer" title="Zoom de la pista y columnas" />
+        <span id="wf-zoom-label" class="text-xs text-gray-500 w-10 text-right tabular-nums">30px</span>
       </div>
 
       <!-- Volume -->

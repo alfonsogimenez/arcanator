@@ -13,6 +13,7 @@
   const currentTimeEl   = document.getElementById('current-time');
   const totalTimeEl     = document.getElementById('total-time');
   const wfZoom          = document.getElementById('wf-zoom');
+  const wfZoomLabel     = document.getElementById('wf-zoom-label');
   const volumeSlider    = document.getElementById('volume');
   const timelineLoading = document.getElementById('timeline-loading');
   const timelineScroll  = document.getElementById('timeline-scroll');
@@ -96,7 +97,7 @@
   const lightboxClose    = document.getElementById('lightbox-close');
 
   // -- Constants -------------------------------------------
-  const PX_PER_SEC      = 30;  // pixels per second for column widths
+  let   PX_PER_SEC      = 30;  // pixels per second for column widths (mutable via zoom slider)
   const MIN_SLOT_DUR    = 2;   // minimum slot duration in seconds
   const DEFAULT_COL_DUR = 10;  // default duration for new columns (seconds)
 
@@ -112,9 +113,7 @@
   let panelLoadingMore = false;
   let panelHasMore     = true;
   let panelObserver    = null;
-  let timelineBuiltScrollWidth = 0;
-  let wavesurferReady          = false;
-  let waveformZoomApplied      = false;
+  let wavesurferReady  = false;
 
   // -- Bootstrap: load job data -----------------------------
   async function init() {
@@ -151,7 +150,7 @@
       wavesurferReady = true;
       totalTimeEl.textContent = formatTime(dur);
       exportBtn.disabled = false;
-      if (timelineBuiltScrollWidth > 0) applyWaveformZoom();
+      syncZoom();  // apply current PX_PER_SEC to waveform once it's ready
     });
     ws.on('timeupdate', (t) => {
       currentTimeEl.textContent = formatTime(t);
@@ -170,10 +169,7 @@
     timelineLoading.classList.add('hidden');
     timelineScroll.style.display = 'flex';
     timelineScroll.classList.remove('hidden');
-    requestAnimationFrame(() => {
-      timelineBuiltScrollWidth = timelineScroll.scrollWidth;
-      if (wavesurferReady && audioDuration > 0) applyWaveformZoom();
-    });
+    if (wavesurferReady && audioDuration > 0) syncZoom();
   }
 
   function createCard(slot, i) {
@@ -321,6 +317,7 @@
         document.body.style.userSelect = '';
         handle.classList.remove('dragging');
         saveSlots();
+        syncZoom();  // re-sync waveform after resize
       }
 
       document.addEventListener('mousemove', onMouseMove);
@@ -593,27 +590,37 @@
     }
   }
 
-  // -- Waveform zoom sync with timeline --------------------
-  function applyWaveformZoom() {
-    if (waveformZoomApplied) return;
-    if (!ws || audioDuration <= 0 || timelineBuiltScrollWidth <= 0) return;
-    waveformZoomApplied = true;
-    const pxPerSec = timelineBuiltScrollWidth / audioDuration;
-    ws.zoom(pxPerSec);
-    // WaveSurfer 7 sets overflow-x:auto on getWrapper() when zoomed
-    const wfScrollEl = ws.getWrapper ? ws.getWrapper() : document.querySelector('#waveform > div');
-    if (!wfScrollEl) return;
-    let syncing = false;
-    timelineScroll.addEventListener('scroll', () => {
-      if (syncing) return; syncing = true;
-      wfScrollEl.scrollLeft = timelineScroll.scrollLeft;
-      requestAnimationFrame(() => { syncing = false; });
-    }, { passive: true });
-    wfScrollEl.addEventListener('scroll', () => {
-      if (syncing) return; syncing = true;
-      timelineScroll.scrollLeft = wfScrollEl.scrollLeft;
-      requestAnimationFrame(() => { syncing = false; });
-    }, { passive: true });
+  // -- Zoom: keep waveform + column widths in sync ---------
+  // Called whenever PX_PER_SEC changes OR wavesurfer becomes ready.
+  let _scrollSyncBound = false;
+  function syncZoom() {
+    // Update waveform zoom
+    if (ws && audioDuration > 0) {
+      ws.zoom(PX_PER_SEC);
+    }
+    // Update label
+    if (wfZoomLabel) wfZoomLabel.textContent = `${PX_PER_SEC}px`;
+
+    // Bind scroll sync once (after waveform is zoomed, wrapper becomes scrollable)
+    if (!_scrollSyncBound && ws) {
+      _scrollSyncBound = true;
+      // Small delay so WaveSurfer renders the zoomed waveform before we grab the wrapper
+      setTimeout(() => {
+        const wfScrollEl = ws.getWrapper ? ws.getWrapper() : document.querySelector('#waveform > div');
+        if (!wfScrollEl) return;
+        let syncing = false;
+        timelineScroll.addEventListener('scroll', () => {
+          if (syncing) return; syncing = true;
+          wfScrollEl.scrollLeft = timelineScroll.scrollLeft;
+          requestAnimationFrame(() => { syncing = false; });
+        }, { passive: true });
+        wfScrollEl.addEventListener('scroll', () => {
+          if (syncing) return; syncing = true;
+          timelineScroll.scrollLeft = wfScrollEl.scrollLeft;
+          requestAnimationFrame(() => { syncing = false; });
+        }, { passive: true });
+      }, 100);
+    }
   }
 
   // -- Lightbox ---------------------------------------------
@@ -680,7 +687,19 @@
       ws && ws.playPause();
     }
   });
-  wfZoom.addEventListener('input', () => { if (ws) ws.zoom(Number(wfZoom.value)); });
+  // Zoom slider → update PX_PER_SEC + rescale all columns + sync waveform
+  wfZoom.addEventListener('input', () => {
+    PX_PER_SEC = Number(wfZoom.value);
+    // Rescale all existing wrappers
+    slots.forEach((slot, i) => {
+      const wrapper = document.getElementById(`wrapper-${i}`);
+      if (wrapper) {
+        const dur = Math.max(slot.end - slot.start, MIN_SLOT_DUR);
+        wrapper.style.width = `${Math.round(dur * PX_PER_SEC)}px`;
+      }
+    });
+    syncZoom();
+  });
   volumeSlider.addEventListener('input', () => { if (ws) ws.setVolume(Number(volumeSlider.value)); });
 
   // -- Slots persistence ------------------------------------
@@ -727,6 +746,7 @@
     timelineScroll.appendChild(wrapper);
     wrapper.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'end' });
     saveSlots();
+    syncZoom();  // extend waveform to cover new column
   }
 
   // -- Delete column ----------------------------------------
