@@ -200,8 +200,9 @@ def assemble_video(
     segment_paths: List[Path] = []
 
     for i, slot in enumerate(slots):
-        image_path = Path(slot.get("image_path") or "")
-        if not image_path.exists():
+        img_path_str = slot.get("image_path") or ""
+        image_path = Path(img_path_str) if img_path_str else Path("__nonexistent__")
+        if not img_path_str or not image_path.exists():
             from backend.services.image_gen import _create_fallback
             image_path = job_dir / "images" / f"{i:04d}.jpg"
             _create_fallback(image_path, slot.get("text", ""))

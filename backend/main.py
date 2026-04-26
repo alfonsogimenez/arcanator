@@ -349,13 +349,31 @@ async def update_job_meta(job_id: str, body: dict):
 # ---------------------------------------------------------------------------
 @app.put("/api/jobs/{job_id}/slots")
 async def put_slots(job_id: str, body: dict):
-    _get_job_or_404(job_id)
+    job = _get_job_or_404(job_id)
     new_slots = body.get("slots")
     if not isinstance(new_slots, list):
         raise HTTPException(status_code=400, detail="Se espera { slots: [...] }")
-    # Re-index to keep indices consistent
+
+    # Build a lookup of existing slots by image_url so we can restore
+    # server-side fields (image_path) that the frontend doesn't manage.
+    existing_by_url: dict = {}
+    for s in job.get("slots", []):
+        if s.get("image_url") and s.get("image_path"):
+            existing_by_url[s["image_url"]] = s["image_path"]
+        for cand in s.get("candidates", []):
+            if cand.get("image_url") and cand.get("path"):
+                existing_by_url[cand["image_url"]] = cand["path"]
+
     for i, s in enumerate(new_slots):
         s["index"] = i
+        # Restore image_path if frontend didn't send it
+        if not s.get("image_path") and s.get("image_url"):
+            s["image_path"] = existing_by_url.get(s["image_url"], "")
+        # Restore candidate paths too
+        for cand in s.get("candidates", []):
+            if not cand.get("path") and cand.get("image_url"):
+                cand["path"] = existing_by_url.get(cand["image_url"], "")
+
     _update_job(job_id, slots=new_slots)
     return {"ok": True, "count": len(new_slots)}
 
