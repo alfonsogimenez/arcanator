@@ -523,7 +523,7 @@ def _process_job(job_id: str):
             {
                 "index": 0,
                 "start": 0.0,
-                "end": audio_end,
+                "end": min(5.0, audio_end),
                 "text": "",
                 "prompt": "",
                 "image_url": None,

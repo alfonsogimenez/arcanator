@@ -99,7 +99,7 @@
   // -- Constants -------------------------------------------
   let   PX_PER_SEC      = 30;  // pixels per second for column widths (mutable via zoom slider)
   const MIN_SLOT_DUR    = 2;   // minimum slot duration in seconds
-  const DEFAULT_COL_DUR = 10;  // default duration for new columns (seconds)
+  const DEFAULT_COL_DUR = 5;   // default duration for new columns (seconds)
 
   // -- State ------------------------------------------------
   let slots            = [];
