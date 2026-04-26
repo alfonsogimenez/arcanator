@@ -78,7 +78,7 @@
     } catch (err) {
       showError(err.message);
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Generar Video';
+      submitBtn.textContent = 'Ir al editor →';
       return;
     }
 
