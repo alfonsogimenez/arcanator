@@ -16,6 +16,7 @@
   const volumeSlider    = document.getElementById('volume');
   const timelineLoading = document.getElementById('timeline-loading');
   const timelineScroll  = document.getElementById('timeline-scroll');
+  const addColumnBtn    = document.getElementById('add-column-btn');
   const exportBtn       = document.getElementById('export-btn');
   const downloadBtn     = document.getElementById('download-btn');
   const exportWrap      = document.getElementById('export-progress-wrap');
@@ -94,6 +95,11 @@
   const lightboxImg      = document.getElementById('lightbox-img');
   const lightboxClose    = document.getElementById('lightbox-close');
 
+  // -- Constants -------------------------------------------
+  const PX_PER_SEC      = 30;  // pixels per second for column widths
+  const MIN_SLOT_DUR    = 2;   // minimum slot duration in seconds
+  const DEFAULT_COL_DUR = 10;  // default duration for new columns (seconds)
+
   // -- State ------------------------------------------------
   let slots            = [];
   let audioDuration    = 0;
@@ -171,10 +177,19 @@
   }
 
   function createCard(slot, i) {
+    const duration  = Math.max(slot.end - slot.start, MIN_SLOT_DUR);
+    const cardWidth = Math.round(duration * PX_PER_SEC);
+
+    // ---- Wrapper (holds card + resize handle) ----
+    const wrapper = document.createElement('div');
+    wrapper.id        = `wrapper-${i}`;
+    wrapper.className = 'slot-wrapper';
+    wrapper.style.width = `${cardWidth}px`;
+
+    // ---- Card ----
     const card = document.createElement('div');
     card.id        = `card-${i}`;
-    card.className = 'slot-card shrink-0 flex flex-col rounded-xl overflow-hidden border border-gray-800 bg-gray-900 select-none';
-    card.style.width = '220px';
+    card.className = 'slot-card h-full flex flex-col rounded-xl overflow-hidden border border-gray-800 bg-gray-900 select-none';
 
     // ---- Header: timestamp + text ----
     const header = document.createElement('div');
@@ -184,8 +199,8 @@
     });
 
     const badge = document.createElement('div');
-    badge.className = 'text-xs text-gray-500 font-mono tabular-nums mb-1';
-    badge.textContent = `${formatTime(slot.start)} - ${formatTime(slot.end)}`;
+    badge.className = 'slot-badge text-xs text-gray-500 font-mono tabular-nums mb-1';
+    badge.textContent = `${formatTime(slot.start)} – ${formatTime(slot.end)}`;
 
     const textEl = document.createElement('p');
     textEl.id        = `text-${i}`;
@@ -206,17 +221,17 @@
     // ---- Image column ----
     const imgCol = document.createElement('div');
     imgCol.id        = `imgcol-${i}`;
-    imgCol.className = 'flex flex-col gap-1 p-2';
+    imgCol.className = 'flex flex-col gap-1 p-2 flex-1';
     renderCandidates(imgCol, slot, i);
     card.appendChild(imgCol);
 
     // ---- Footer buttons ----
     const footer = document.createElement('div');
-    footer.className = 'flex gap-1 px-2 pb-2';
+    footer.className = 'flex gap-1 px-2 pb-2 flex-wrap';
 
     const searchBtn = document.createElement('button');
     searchBtn.className = 'flex-1 py-1 text-xs text-gray-400 border border-gray-700 rounded-lg hover:border-violet-500 hover:text-violet-400 transition-colors';
-    searchBtn.textContent = '🔍 Ver b\u00fasqueda';
+    searchBtn.textContent = '🔍 Buscar';
     searchBtn.addEventListener('click', (e) => { e.stopPropagation(); openSearchPanel(i); });
 
     const localBtn = document.createElement('button');
@@ -224,8 +239,15 @@
     localBtn.textContent = '📁 Local';
     localBtn.addEventListener('click', (e) => { e.stopPropagation(); openReplace(i); });
 
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'py-1 px-2 text-xs text-gray-600 border border-gray-700 rounded-lg hover:border-red-500 hover:text-red-400 transition-colors';
+    deleteBtn.title = 'Eliminar columna';
+    deleteBtn.textContent = '🗑';
+    deleteBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteColumn(i); });
+
     footer.appendChild(searchBtn);
     footer.appendChild(localBtn);
+    footer.appendChild(deleteBtn);
     card.appendChild(footer);
 
     // ---- Drag-and-drop target ----
@@ -238,12 +260,89 @@
       if (url) useExternalUrl(i, url);
     });
 
-    return card;
+    wrapper.appendChild(card);
+
+    // ---- Resize handle (right edge) ----
+    const handle = document.createElement('div');
+    handle.className = 'col-resize-handle';
+    handle.title = 'Arrastrar para cambiar duración';
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handle.classList.add('dragging');
+
+      const startX       = e.clientX;
+      const origDuration = slots[i].end - slots[i].start;
+      const origEnd      = slots[i].end;
+      const isLast       = i === slots.length - 1;
+      const nextOrigEnd  = !isLast ? slots[i + 1].end : null;
+
+      document.body.style.cursor    = 'col-resize';
+      document.body.style.userSelect = 'none';
+
+      function onMouseMove(ev) {
+        const dx = ev.clientX - startX;
+        let newDur = origDuration + dx / PX_PER_SEC;
+        newDur = Math.max(newDur, MIN_SLOT_DUR);
+
+        if (isLast) {
+          // Cap: end can't exceed audio duration
+          if (audioDuration > 0) newDur = Math.min(newDur, audioDuration - slots[i].start);
+        } else {
+          // Cap: next slot can't shrink below minimum
+          const maxEnd = nextOrigEnd - MIN_SLOT_DUR;
+          newDur = Math.min(newDur, maxEnd - slots[i].start);
+        }
+
+        const newEnd = slots[i].start + newDur;
+        slots[i].end = newEnd;
+        if (!isLast) slots[i + 1].start = newEnd;
+
+        // Update wrapper widths live
+        wrapper.style.width = `${Math.round(newDur * PX_PER_SEC)}px`;
+        const wBadge = wrapper.querySelector('.slot-badge');
+        if (wBadge) wBadge.textContent = `${formatTime(slots[i].start)} – ${formatTime(slots[i].end)}`;
+
+        if (!isLast) {
+          const nextWrapper = document.getElementById(`wrapper-${i + 1}`);
+          if (nextWrapper) {
+            const nd = slots[i + 1].end - slots[i + 1].start;
+            nextWrapper.style.width = `${Math.round(nd * PX_PER_SEC)}px`;
+            const nb = nextWrapper.querySelector('.slot-badge');
+            if (nb) nb.textContent = `${formatTime(slots[i + 1].start)} – ${formatTime(slots[i + 1].end)}`;
+          }
+        }
+      }
+
+      function onMouseUp() {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        document.body.style.cursor    = '';
+        document.body.style.userSelect = '';
+        handle.classList.remove('dragging');
+        saveSlots();
+      }
+
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    });
+    wrapper.appendChild(handle);
+
+    return wrapper;
   }
 
   function renderCandidates(container, slot, slotIdx) {
     container.innerHTML = '';
     const candidates = slot.candidates || [];
+
+    if (candidates.length === 0 && !slot.image_url) {
+      // Empty placeholder
+      const ph = document.createElement('div');
+      ph.className = 'slot-empty-placeholder';
+      ph.innerHTML = '<span style="font-size:1.5rem">🖼️</span><span>Sin imagen<br>Usa 🔍 Buscar o 📁 Local</span>';
+      container.appendChild(ph);
+      return;
+    }
 
     if (candidates.length === 0) {
       // Single image (legacy or no candidates)
@@ -583,6 +682,66 @@
   });
   wfZoom.addEventListener('input', () => { if (ws) ws.zoom(Number(wfZoom.value)); });
   volumeSlider.addEventListener('input', () => { if (ws) ws.setVolume(Number(volumeSlider.value)); });
+
+  // -- Slots persistence ------------------------------------
+  let _saveSlotsTimer = null;
+  function saveSlots() {
+    clearTimeout(_saveSlotsTimer);
+    _saveSlotsTimer = setTimeout(async () => {
+      try {
+        await fetch(`/api/jobs/${jobId}/slots`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slots }),
+        });
+      } catch (_) {}
+    }, 500);
+  }
+
+  // -- Add column -------------------------------------------
+  function addColumn() {
+    const capDuration = audioDuration > 0 ? audioDuration : 3600;
+    const lastSlot = slots[slots.length - 1];
+    const newStart = lastSlot ? Math.round(lastSlot.end * 100) / 100 : 0;
+    const newEnd   = Math.min(newStart + DEFAULT_COL_DUR, capDuration);
+    if (newEnd - newStart < MIN_SLOT_DUR) {
+      // No room left: try to squeeze a minimum-duration column
+      const minEnd = Math.min(newStart + MIN_SLOT_DUR, capDuration);
+      if (minEnd <= newStart) {
+        alert('No hay espacio en el audio para añadir otra columna.');
+        return;
+      }
+    }
+    const newSlot = {
+      index: slots.length,
+      start: newStart,
+      end: Math.min(newStart + DEFAULT_COL_DUR, capDuration),
+      text: '',
+      prompt: '',
+      image_url: null,
+      image_path: null,
+      candidates: [],
+    };
+    slots.push(newSlot);
+    const wrapper = createCard(newSlot, slots.length - 1);
+    timelineScroll.appendChild(wrapper);
+    wrapper.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'end' });
+    saveSlots();
+  }
+
+  // -- Delete column ----------------------------------------
+  function deleteColumn(idx) {
+    if (slots.length <= 1) {
+      alert('Debe haber al menos una columna.');
+      return;
+    }
+    slots.splice(idx, 1);
+    slots.forEach((s, i) => { s.index = i; });
+    buildTimeline(slots);
+    saveSlots();
+  }
+
+  addColumnBtn.addEventListener('click', addColumn);
 
   // -- Overlay text: autosave with debounce ----------------
   let _overlayDebounce = null;

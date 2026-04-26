@@ -292,6 +292,22 @@ async def update_job_meta(job_id: str, body: dict):
 
 
 # ---------------------------------------------------------------------------
+# API: Bulk-replace all slots (resize / add / delete columns)
+# ---------------------------------------------------------------------------
+@app.put("/api/jobs/{job_id}/slots")
+async def put_slots(job_id: str, body: dict):
+    _get_job_or_404(job_id)
+    new_slots = body.get("slots")
+    if not isinstance(new_slots, list):
+        raise HTTPException(status_code=400, detail="Se espera { slots: [...] }")
+    # Re-index to keep indices consistent
+    for i, s in enumerate(new_slots):
+        s["index"] = i
+    _update_job(job_id, slots=new_slots)
+    return {"ok": True, "count": len(new_slots)}
+
+
+# ---------------------------------------------------------------------------
 # API: Replace slot image
 # ---------------------------------------------------------------------------
 @app.patch("/api/jobs/{job_id}/slots/{index}")
@@ -491,13 +507,11 @@ async def export_video(job_id: str):
 def _process_job(job_id: str):
     try:
         from backend.services.transcription import transcribe_audio
-        from backend.services.image_gen import generate_all_images
 
         with _lock:
             job = dict(_jobs[job_id])
         audio_path = job["audio_path"]
         interval = job["interval"]
-        job_dir = OUTPUT_DIR / job_id
 
         # Step 1 – Transcription
         _update_job(job_id, status="transcribing", progress_message="Transcribiendo audio (esto puede tardar un momento la primera vez)...", progress_percent=5)
@@ -511,36 +525,10 @@ def _process_job(job_id: str):
         # Free Whisper model from memory — FFmpeg export needs the RAM
         from backend.services.transcription import unload_model
         unload_model()
-        _update_job(job_id, slots=slots)
-        _push_event(job_id, "progress", {"message": f"Transcripción completa · {len(slots)} segmentos.", "percent": 15})
 
-        # Step 2 – Generate images
-        total = len(slots)
-        _update_job(job_id, status="generating_images", progress_message=f"Generando {total} imágenes...", progress_percent=15)
-
-        def on_image_ready(index: int, slot: dict):
-            with _lock:
-                if index < len(_jobs[job_id]["slots"]):
-                    _jobs[job_id]["slots"][index] = slot
-            _save_job(job_id)
-            percent = 15 + int((index + 1) / total * 70)
-            _push_event(job_id, "slot_ready", {
-                "index": index,
-                "image_url": slot["image_url"],
-                "text": slot["text"],
-                "start": slot["start"],
-                "end": slot["end"],
-                "candidates": slot.get("candidates", []),
-                "prompt": slot.get("prompt", ""),
-            })
-            _push_event(job_id, "progress", {
-                "message": f"Imagen {index + 1} de {total} generada",
-                "percent": percent,
-            })
-
-        slots = generate_all_images(slots, job_dir, job_id, on_image_ready)
-        _update_job(job_id, slots=slots, status="ready", progress_message="¡Listo para revisar!", progress_percent=85)
-        _push_event(job_id, "progress", {"message": "¡Imágenes generadas! Redirigiendo al editor...", "percent": 100})
+        # Slots start with no images — user adds them manually in the editor
+        _update_job(job_id, slots=slots, status="ready", progress_message="¡Listo para revisar!", progress_percent=100)
+        _push_event(job_id, "progress", {"message": "Transcripción completa. Abriendo editor...", "percent": 100})
         _push_event(job_id, "done", {"job_id": job_id})
 
     except Exception as exc:

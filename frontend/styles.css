@@ -91,6 +91,64 @@
   animation: replacedFlash 1.2s ease-out forwards;
 }
 
+/* ── Column resize handle ────────────────────────────────── */
+.col-resize-handle {
+  position: absolute;
+  right: -4px;
+  top: 0;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.col-resize-handle::after {
+  content: '';
+  width: 3px;
+  height: 40px;
+  background: #6d28d9;
+  border-radius: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.col-resize-handle:hover::after,
+.col-resize-handle.dragging::after {
+  opacity: 1;
+}
+
+/* ── Slot wrapper (holds card + resize handle) ───────────── */
+.slot-wrapper {
+  position: relative;
+  flex-shrink: 0;
+  height: 100%;
+}
+
+/* ── Empty image placeholder ────────────────────────────── */
+.slot-empty-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 120px;
+  border: 2px dashed #374151;
+  border-radius: 6px;
+  color: #4b5563;
+  font-size: 0.7rem;
+  text-align: center;
+  gap: 4px;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.slot-empty-placeholder:hover,
+.drop-active .slot-empty-placeholder {
+  border-color: #6d28d9;
+  color: #8b5cf6;
+}
+
 /* ── Text clamp (for browsers without line-clamp support) ─ */
 .line-clamp-3 {
   display: -webkit-box;
