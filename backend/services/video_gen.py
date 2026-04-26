@@ -236,6 +236,8 @@ def assemble_video(
     on_progress("Añadiendo audio y generando MP4 final...", 90)
 
     # Build optional drawtext overlay (seconds 2–7)
+    # Font path works on Debian-based Docker images (fonts-dejavu-core installed)
+    _FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     vf_overlay = ""
     if overlay_text:
         # Escape special characters for FFmpeg drawtext
@@ -245,8 +247,13 @@ def assemble_video(
             .replace("'", "\\'")
             .replace(":", "\\:")
         )
+        import os as _os
+        font_clause = f"fontfile={_FONT_PATH}:" if _os.path.exists(_FONT_PATH) else ""
         vf_overlay = (
-            f"drawtext=text='{safe_text}':"
+            f"setpts=PTS-STARTPTS,"
+            f"drawtext="
+            f"{font_clause}"
+            f"text='{safe_text}':"
             f"fontsize=64:"
             f"fontcolor=white:"
             f"borderw=3:bordercolor=black:"

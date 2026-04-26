@@ -8,8 +8,6 @@
   const audioInput    = document.getElementById('audio-input');
   const dropLabel     = document.getElementById('drop-label');
   const dropIcon      = document.getElementById('drop-icon');
-  const intervalSlider = document.getElementById('interval');
-  const intervalValue = document.getElementById('interval-value');
   const submitBtn     = document.getElementById('submit-btn');
   const form          = document.getElementById('upload-form');
   const uploadSection = document.getElementById('upload-section');
@@ -20,11 +18,6 @@
   const errorMsg      = document.getElementById('error-msg');
 
   let selectedFile  = null;
-
-  // ── Interval slider ───────────────────────────────────────
-  intervalSlider.addEventListener('input', () => {
-    intervalValue.textContent = `${intervalSlider.value} s`;
-  });
 
   // ── Drop zone: click to open file picker ─────────────────
   dropZone.addEventListener('click', () => audioInput.click());
@@ -71,7 +64,7 @@
 
     const fd = new FormData();
     fd.append('audio', selectedFile);
-    fd.append('interval', intervalSlider.value);
+    fd.append('interval', '10');
 
     let jobId;
     try {
