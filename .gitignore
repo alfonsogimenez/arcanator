@@ -1,4 +1,5 @@
 output/
+venv/
 backend/venv/
 backend/__pycache__/
 backend/services/__pycache__/
