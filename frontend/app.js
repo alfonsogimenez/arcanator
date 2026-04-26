@@ -226,17 +226,38 @@
         const when  = formatRelative(job.created_at);
 
         const li = document.createElement('li');
-        li.className = 'flex items-center gap-3 bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 cursor-pointer hover:border-violet-600 transition-colors group';
+        li.id = `recent-${job.id}`;
+        li.className = 'flex items-center gap-3 bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 hover:border-violet-600 transition-colors group';
         li.innerHTML = `
-          <span class="text-2xl select-none">🎙️</span>
-          <div class="flex-1 min-w-0">
+          <span class="text-2xl select-none cursor-pointer" data-open>🎙️</span>
+          <div class="flex-1 min-w-0 cursor-pointer" data-open>
             <p class="text-sm font-medium text-gray-200 truncate">${name}</p>
             <p class="text-xs text-gray-500">${slots} columna${slots !== 1 ? 's' : ''} · ${when}</p>
           </div>
-          <span class="text-xs font-semibold ${sl.cls} shrink-0">${sl.text}</span>
-          <span class="text-gray-600 group-hover:text-violet-400 transition-colors text-lg">→</span>
+          <span class="text-xs font-semibold ${sl.cls} shrink-0 cursor-pointer" data-open>${sl.text}</span>
+          <span class="text-gray-600 group-hover:text-violet-400 transition-colors text-lg cursor-pointer" data-open>→</span>
+          <button data-del title="Eliminar proyecto"
+            class="ml-1 text-gray-600 hover:text-red-400 transition-colors text-lg leading-none shrink-0 px-1"
+          >🗑</button>
         `;
-        li.addEventListener('click', () => goToEditor(job.id));
+        // Open editor when clicking anywhere except the delete button
+        li.querySelectorAll('[data-open]').forEach(el =>
+          el.addEventListener('click', () => goToEditor(job.id))
+        );
+        // Delete button
+        li.querySelector('[data-del]').addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (!confirm(`¿Eliminar el proyecto "${name}"? Se borrarán todos sus archivos.`)) return;
+          try {
+            const r = await fetch(`/api/jobs/${job.id}`, { method: 'DELETE' });
+            if (!r.ok) throw new Error(await r.text());
+            const el = document.getElementById(`recent-${job.id}`);
+            if (el) el.remove();
+            if (!recentList.children.length) recentSection.classList.add('hidden');
+          } catch (err) {
+            alert(`Error al eliminar: ${err.message}`);
+          }
+        });
         recentList.appendChild(li);
       });
 

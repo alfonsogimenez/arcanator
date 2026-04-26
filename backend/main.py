@@ -266,6 +266,25 @@ async def get_job_status(job_id: str):
 
 
 # ---------------------------------------------------------------------------
+# API: Delete a job and all its files
+# ---------------------------------------------------------------------------
+@app.delete("/api/jobs/{job_id}")
+async def delete_job(job_id: str):
+    _get_job_or_404(job_id)
+    import shutil as _shutil
+    job_dir = OUTPUT_DIR / job_id
+    try:
+        if job_dir.exists():
+            _shutil.rmtree(str(job_dir))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"No se pudo borrar el directorio: {e}")
+    with _lock:
+        _jobs.pop(job_id, None)
+        _event_queues.pop(job_id, None)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
 # API: SSE stream
 # ---------------------------------------------------------------------------
 @app.get("/api/jobs/{job_id}/stream")
