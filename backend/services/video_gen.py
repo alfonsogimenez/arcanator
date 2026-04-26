@@ -181,13 +181,13 @@ def assemble_video(
     if total == 0:
         raise RuntimeError("No hay slots para exportar.")
 
-    # Extend the last slot to cover the full audio duration (Whisper often misses
-    # the last few seconds of silence, which would cause -shortest to cut the video)
+    # Extend the last slot to cover the full audio duration + 1 s of tail
+    # so the last image doesn't cut exactly on the last audio frame.
     audio_duration = _get_audio_duration(audio_path, ffmpeg)
-    if audio_duration > 0 and slots[-1]["end"] < audio_duration:
+    if audio_duration > 0:
         slots = list(slots)  # don't mutate the original
         last = dict(slots[-1])
-        last["end"] = audio_duration
+        last["end"] = audio_duration + 1.0
         slots[-1] = last
 
     # Randomise Ken-Burns direction per slot (deterministic via index)
