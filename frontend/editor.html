@@ -119,8 +119,15 @@
 
     <!-- Custom search bar -->
     <div class="flex gap-2 px-3 py-2 border-b border-gray-800 shrink-0">
-      <input id="panel-search-input" type="text" placeholder="Nueva búsqueda…"
-        class="flex-1 bg-gray-800 text-sm text-gray-100 rounded-lg px-3 py-1.5 border border-gray-700 focus:border-violet-500 focus:outline-none min-w-0" />
+      <div class="relative flex-1 min-w-0">
+        <input id="panel-search-input" type="text" placeholder="Nueva búsqueda…"
+          autocomplete="off"
+          class="w-full bg-gray-800 text-sm text-gray-100 rounded-lg px-3 py-1.5 border border-gray-700 focus:border-violet-500 focus:outline-none" />
+        <!-- Recent searches dropdown -->
+        <ul id="panel-search-history"
+          class="hidden absolute left-0 right-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-10 overflow-hidden">
+        </ul>
+      </div>
       <button id="panel-search-btn"
         class="px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-sm rounded-lg transition-colors shrink-0">
         🔍

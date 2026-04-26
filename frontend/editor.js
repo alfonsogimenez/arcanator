@@ -33,6 +33,60 @@
   const panelLoadMore   = document.getElementById('panel-load-more');
   const panelSearchInput = document.getElementById('panel-search-input');
   const panelSearchBtn   = document.getElementById('panel-search-btn');
+  const panelSearchHistory = document.getElementById('panel-search-history');
+
+  // -- Search history (localStorage) -----------------------
+  const HISTORY_KEY = 'arcanator_search_history';
+  function getSearchHistory() {
+    try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch { return []; }
+  }
+  function addToSearchHistory(q) {
+    if (!q) return;
+    let h = getSearchHistory().filter(s => s !== q);
+    h.unshift(q);
+    h = h.slice(0, 10);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(h));
+  }
+  function renderSearchHistory() {
+    const h = getSearchHistory();
+    panelSearchHistory.innerHTML = '';
+    if (!h.length) { panelSearchHistory.classList.add('hidden'); return; }
+    h.forEach(q => {
+      const li = document.createElement('li');
+      li.className = 'flex items-center gap-2 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700 cursor-pointer';
+      li.innerHTML = `<span class="text-gray-500 text-xs">🕐</span><span class="flex-1 truncate">${q}</span>`;
+      li.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // avoid blur before click
+        panelSearchInput.value = q;
+        panelSearchHistory.classList.add('hidden');
+        panelSearchBtn.click();
+      });
+      panelSearchHistory.appendChild(li);
+    });
+    panelSearchHistory.classList.remove('hidden');
+  }
+  panelSearchInput.addEventListener('focus', () => { if (getSearchHistory().length) renderSearchHistory(); });
+  panelSearchInput.addEventListener('blur', () => { setTimeout(() => panelSearchHistory.classList.add('hidden'), 150); });
+  panelSearchInput.addEventListener('input', () => {
+    const val = panelSearchInput.value.trim();
+    if (!val) { renderSearchHistory(); return; }
+    const filtered = getSearchHistory().filter(s => s.toLowerCase().includes(val.toLowerCase()));
+    panelSearchHistory.innerHTML = '';
+    if (!filtered.length) { panelSearchHistory.classList.add('hidden'); return; }
+    filtered.forEach(q => {
+      const li = document.createElement('li');
+      li.className = 'flex items-center gap-2 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700 cursor-pointer';
+      li.innerHTML = `<span class="text-gray-500 text-xs">🕐</span><span class="flex-1 truncate">${q}</span>`;
+      li.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        panelSearchInput.value = q;
+        panelSearchHistory.classList.add('hidden');
+        panelSearchBtn.click();
+      });
+      panelSearchHistory.appendChild(li);
+    });
+    panelSearchHistory.classList.remove('hidden');
+  });
   const lightbox         = document.getElementById('lightbox');
   const lightboxImg      = document.getElementById('lightbox-img');
   const lightboxClose    = document.getElementById('lightbox-close');
@@ -395,10 +449,15 @@
   // Custom search button + Enter key
   panelSearchBtn.addEventListener('click', () => {
     const q = panelSearchInput.value.trim();
-    if (q) loadPanelResults(q, true);
+    if (q) {
+      addToSearchHistory(q);
+      panelSearchHistory.classList.add('hidden');
+      loadPanelResults(q, true);
+    }
   });
   panelSearchInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') panelSearchBtn.click();
+    if (e.key === 'Escape') panelSearchHistory.classList.add('hidden');
   });
 
   function closePanelIfSameSlot(slotIdx) {
