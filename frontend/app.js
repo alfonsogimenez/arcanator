@@ -189,4 +189,60 @@
   function goToEditor(jobId) {
     window.location.href = `/editor.html?job=${jobId}`;
   }
+
+  // ── Recent jobs ───────────────────────────────────────────
+  const recentSection = document.getElementById('recent-section');
+  const recentList    = document.getElementById('recent-list');
+
+  const STATUS_LABEL = {
+    queued:      { text: 'En cola',   cls: 'text-yellow-400' },
+    transcribing:{ text: 'Analizando',cls: 'text-blue-400'   },
+    ready:       { text: 'Listo',     cls: 'text-green-400'  },
+    done:        { text: 'Exportado', cls: 'text-violet-400' },
+    error:       { text: 'Error',     cls: 'text-red-400'    },
+  };
+
+  function formatRelative(ts) {
+    if (!ts) return '';
+    const diff = Math.floor((Date.now() / 1000) - ts);
+    if (diff < 60)       return 'hace un momento';
+    if (diff < 3600)     return `hace ${Math.floor(diff / 60)} min`;
+    if (diff < 86400)    return `hace ${Math.floor(diff / 3600)} h`;
+    return `hace ${Math.floor(diff / 86400)} d`;
+  }
+
+  async function loadRecentJobs() {
+    try {
+      const res = await fetch('/api/jobs?limit=8');
+      if (!res.ok) return;
+      const jobs = await res.json();
+      if (!jobs.length) return;
+
+      recentList.innerHTML = '';
+      jobs.forEach(job => {
+        const sl = STATUS_LABEL[job.status] || { text: job.status, cls: 'text-gray-400' };
+        const name = (job.audio_filename || 'audio').replace(/\.[^.]+$/, '');
+        const slots = job.slots_count;
+        const when  = formatRelative(job.created_at);
+
+        const li = document.createElement('li');
+        li.className = 'flex items-center gap-3 bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 cursor-pointer hover:border-violet-600 transition-colors group';
+        li.innerHTML = `
+          <span class="text-2xl select-none">🎙️</span>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-gray-200 truncate">${name}</p>
+            <p class="text-xs text-gray-500">${slots} columna${slots !== 1 ? 's' : ''} · ${when}</p>
+          </div>
+          <span class="text-xs font-semibold ${sl.cls} shrink-0">${sl.text}</span>
+          <span class="text-gray-600 group-hover:text-violet-400 transition-colors text-lg">→</span>
+        `;
+        li.addEventListener('click', () => goToEditor(job.id));
+        recentList.appendChild(li);
+      });
+
+      recentSection.classList.remove('hidden');
+    } catch (_) {}
+  }
+
+  loadRecentJobs();
 })();

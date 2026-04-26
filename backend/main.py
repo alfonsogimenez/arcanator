@@ -206,12 +206,14 @@ async def create_job(
         "status": "queued",
         "audio_path": str(audio_path),
         "audio_url": f"/output/{job_id}/audio{suffix}",
+        "audio_filename": audio.filename or f"audio{suffix}",
         "interval": interval,
         "slots": [],
         "progress_message": "En cola...",
         "progress_percent": 0,
         "error": None,
         "download_url": None,
+        "created_at": time.time(),
     }
     with _lock:
         _jobs[job_id] = job
@@ -221,6 +223,38 @@ async def create_job(
     thread = threading.Thread(target=_process_job, args=(job_id,), daemon=True)
     thread.start()
     return {"job_id": job_id}
+
+
+# ---------------------------------------------------------------------------
+# API: List recent jobs (for the home screen "recent sessions" panel)
+# ---------------------------------------------------------------------------
+@app.get("/api/jobs")
+async def list_jobs(limit: int = 10):
+    """Return the most recent jobs sorted by creation time (newest first)."""
+    with _lock:
+        all_jobs = list(_jobs.values())
+
+    def _mtime(j):
+        p = OUTPUT_DIR / j["id"]
+        try:
+            return p.stat().st_mtime if p.exists() else 0
+        except Exception:
+            return 0
+
+    all_jobs.sort(key=_mtime, reverse=True)
+    result = []
+    for j in all_jobs[:limit]:
+        # Include only the fields needed by the home screen
+        result.append({
+            "id":               j["id"],
+            "status":           j.get("status", "unknown"),
+            "audio_url":        j.get("audio_url"),
+            "audio_filename":   j.get("audio_filename", "audio"),
+            "created_at":       j.get("created_at"),
+            "slots_count":      len(j.get("slots", [])),
+            "download_url":     j.get("download_url"),
+        })
+    return result
 
 
 # ---------------------------------------------------------------------------
