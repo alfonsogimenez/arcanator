@@ -21,6 +21,9 @@
   const exportWrap      = document.getElementById('export-progress-wrap');
   const exportBar       = document.getElementById('export-bar');
   const exportMsg       = document.getElementById('export-msg');
+  const overlayInput    = document.getElementById('overlay-text-input');
+  const overlaySaved    = document.getElementById('overlay-text-saved');
+  const overlayError    = document.getElementById('overlay-text-error');
   const replaceInput    = document.getElementById('replace-input');
   const searchPanel     = document.getElementById('search-panel');
   const panelClose      = document.getElementById('panel-close');
@@ -120,6 +123,8 @@
     }
 
     slots = job.slots || [];
+    // Restore overlay text if already saved
+    if (job.overlay_text) overlayInput.value = job.overlay_text;
     buildTimeline(slots);
 
     ws = WaveSurfer.create({
@@ -579,8 +584,49 @@
   wfZoom.addEventListener('input', () => { if (ws) ws.zoom(Number(wfZoom.value)); });
   volumeSlider.addEventListener('input', () => { if (ws) ws.setVolume(Number(volumeSlider.value)); });
 
+  // -- Overlay text: autosave with debounce ----------------
+  let _overlayDebounce = null;
+  overlayInput.addEventListener('input', () => {
+    overlayError.classList.add('hidden');
+    overlaySaved.classList.add('hidden');
+    clearTimeout(_overlayDebounce);
+    _overlayDebounce = setTimeout(async () => {
+      const text = overlayInput.value.trim();
+      if (!text) return;
+      try {
+        await fetch(`/api/jobs/${jobId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ overlay_text: text }),
+        });
+        overlaySaved.classList.remove('hidden');
+        setTimeout(() => overlaySaved.classList.add('hidden'), 2000);
+      } catch (_) {}
+    }, 800);
+  });
+
   // -- Export ----------------------------------------------
   exportBtn.addEventListener('click', async () => {
+    // Validate overlay text
+    const overlayText = overlayInput.value.trim();
+    if (!overlayText) {
+      overlayError.classList.remove('hidden');
+      overlayInput.focus();
+      overlayInput.classList.add('border-red-500');
+      setTimeout(() => overlayInput.classList.remove('border-red-500'), 2000);
+      return;
+    }
+    overlayError.classList.add('hidden');
+
+    // Save overlay text before exporting (in case debounce hasn't fired yet)
+    try {
+      await fetch(`/api/jobs/${jobId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ overlay_text: overlayText }),
+      });
+    } catch (_) {}
+
     exportBtn.disabled = true;
     exportBtn.textContent = 'Exportando...';
     exportWrap.classList.remove('hidden');

@@ -165,6 +165,7 @@ def assemble_video(
     job_dir: Path,
     output_path: Path,
     on_progress: Callable[[str, int], None],
+    overlay_text: str = "",
 ) -> None:
     """
     Build the final MP4:
@@ -234,19 +235,58 @@ def assemble_video(
     # ------------------------------------------------------------------ #
     on_progress("Añadiendo audio y generando MP4 final...", 90)
 
-    cmd_final = [
-        ffmpeg, "-y",
-        "-f", "concat", "-safe", "0",
-        "-i", str(concat_file),
-        "-i", str(audio_path),
-        "-map", "0:v:0",
-        "-map", "1:a:0",
-        "-c:v", "copy",            # no re-encode: fast and lossless quality
-        "-c:a", "aac",
-        "-b:a", AUDIO_BITRATE,
-        "-movflags", "+faststart", # optimise for web streaming
-        str(output_path),
-    ]
+    # Build optional drawtext overlay (seconds 2–7)
+    vf_overlay = ""
+    if overlay_text:
+        # Escape special characters for FFmpeg drawtext
+        safe_text = (
+            overlay_text
+            .replace("\\", "\\\\")
+            .replace("'", "\\'")
+            .replace(":", "\\:")
+        )
+        vf_overlay = (
+            f"drawtext=text='{safe_text}':"
+            f"fontsize=64:"
+            f"fontcolor=white:"
+            f"borderw=3:bordercolor=black:"
+            f"x=(w-text_w)/2:"
+            f"y=h*0.12:"
+            f"enable='between(t,2,7)'"
+        )
+
+    if vf_overlay:
+        cmd_final = [
+            ffmpeg, "-y",
+            "-f", "concat", "-safe", "0",
+            "-i", str(concat_file),
+            "-i", str(audio_path),
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-vf", vf_overlay,
+            "-c:v", "libx264",
+            "-crf", str(CRF),
+            "-preset", "ultrafast",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", AUDIO_BITRATE,
+            "-movflags", "+faststart",
+            str(output_path),
+        ]
+    else:
+        cmd_final = [
+            ffmpeg, "-y",
+            "-f", "concat", "-safe", "0",
+            "-i", str(concat_file),
+            "-i", str(audio_path),
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", AUDIO_BITRATE,
+            "-movflags", "+faststart",
+            str(output_path),
+        ]
     result = subprocess.run(cmd_final, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if result.returncode != 0:
         raise RuntimeError(f"Error en el paso final de FFmpeg:\n{result.stderr[-600:]}")

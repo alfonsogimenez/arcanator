@@ -278,6 +278,20 @@ async def stream_events(job_id: str):
 
 
 # ---------------------------------------------------------------------------
+# API: Update job metadata (overlay_text, etc.)
+# ---------------------------------------------------------------------------
+@app.patch("/api/jobs/{job_id}")
+async def update_job_meta(job_id: str, body: dict):
+    _get_job_or_404(job_id)
+    allowed = {"overlay_text"}
+    update = {k: v for k, v in body.items() if k in allowed}
+    if not update:
+        raise HTTPException(status_code=400, detail="No hay campos válidos para actualizar.")
+    _update_job(job_id, **update)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
 # API: Replace slot image
 # ---------------------------------------------------------------------------
 @app.patch("/api/jobs/{job_id}/slots/{index}")
@@ -457,12 +471,16 @@ async def export_video(job_id: str):
     if job["status"] not in ("ready", "done"):
         raise HTTPException(status_code=400, detail="El job no está listo para exportar.")
 
+    overlay_text = (job.get("overlay_text") or "").strip()
+    if not overlay_text:
+        raise HTTPException(status_code=422, detail="El texto de cabecera es obligatorio antes de exportar.")
+
     # Reset queue for export events
     with _lock:
         _event_queues[job_id] = queue.Queue(maxsize=2000)
 
     _update_job(job_id, status="exporting", progress_message="Iniciando exportación...", progress_percent=0)
-    thread = threading.Thread(target=_run_export, args=(job_id,), daemon=True)
+    thread = threading.Thread(target=_run_export, args=(job_id, overlay_text), daemon=True)
     thread.start()
     return {"status": "exporting"}
 
@@ -532,7 +550,7 @@ def _process_job(job_id: str):
         traceback.print_exc()
 
 
-def _run_export(job_id: str):
+def _run_export(job_id: str, overlay_text: str = ""):
     from backend.services.video_gen import assemble_video
 
     try:
@@ -547,7 +565,7 @@ def _run_export(job_id: str):
             _update_job(job_id, progress_message=message, progress_percent=percent)
             _push_event(job_id, "export_progress", {"message": message, "percent": percent})
 
-        assemble_video(slots, audio_path, job_dir, output_path, on_progress)
+        assemble_video(slots, audio_path, job_dir, output_path, on_progress, overlay_text=overlay_text)
 
         download_url = f"/output/{job_id}/final.mp4"
         _update_job(job_id, status="done", download_url=download_url, progress_percent=100,

@@ -82,6 +82,22 @@
     </div>
   </div>
 
+  <!-- ── Overlay text bar ───────────────────────────────── -->
+  <div class="px-6 py-2 bg-gray-900 border-b border-gray-800 shrink-0 flex items-center gap-3">
+    <label for="overlay-text-input" class="text-xs text-gray-400 whitespace-nowrap">
+      🎬 Texto de cabecera <span class="text-red-400">*</span>
+    </label>
+    <input
+      id="overlay-text-input"
+      type="text"
+      maxlength="120"
+      placeholder="Texto obligatorio · aparece del seg. 2 al 7…"
+      class="flex-1 bg-gray-800 text-sm text-gray-100 rounded-lg px-3 py-1.5 border border-gray-700 focus:border-violet-500 focus:outline-none"
+    />
+    <span id="overlay-text-saved" class="text-xs text-green-400 hidden">✓ guardado</span>
+    <span id="overlay-text-error" class="text-xs text-red-400 hidden">⚠ obligatorio</span>
+  </div>
+
   <!-- ── Timeline strip ─────────────────────────────────── -->
   <main class="flex-1 overflow-y-hidden">
     <!-- Loading placeholder -->
