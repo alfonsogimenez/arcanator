@@ -104,6 +104,7 @@ OVERLAY_FONT_SIZE_MAX = 112
 SHORT_MAX_DURATION = 55.0
 SHORT_WIDTH = 1080
 SHORT_HEIGHT = 1920
+INITIAL_SLOT_DURATION = 7.0
 
 
 # ---------------------------------------------------------------------------
@@ -752,7 +753,7 @@ def _process_job(job_id: str):
         audio_duration = _get_audio_duration(Path(audio_path), ffmpeg)
         audio_end = round(audio_duration, 2) if audio_duration > 0 else 0.0
 
-        slot_duration = 5.0
+        slot_duration = INITIAL_SLOT_DURATION
         initial_slots = []
         if audio_end <= 0:
             initial_slots.append({

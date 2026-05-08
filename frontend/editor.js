@@ -105,7 +105,7 @@
   // -- Constants -------------------------------------------
   let   PX_PER_SEC      = 30;  // pixels per second for column widths (mutable via zoom slider)
   const MIN_SLOT_DUR    = 2;   // minimum slot duration in seconds
-  const DEFAULT_COL_DUR = 5;   // default duration for new columns (seconds)
+  const DEFAULT_COL_DUR = 7;   // default duration for new empty columns (seconds)
   const TIME_EPSILON    = 0.001;
   const OVERLAY_FONT_DEFAULT = 64;
   const OVERLAY_FONT_MIN = 36;
@@ -202,9 +202,9 @@
     return Math.round(Math.max(0, value) * 1000) / 1000;
   }
 
-  function makeEmptySlot(start, end) {
+  function makeEmptySlot(start, end, index = slots.length) {
     return {
-      index: slots.length,
+      index,
       start: roundTime(start),
       end: roundTime(end),
       text: '',
@@ -215,6 +215,41 @@
     };
   }
 
+  function makeEmptySlotsForDuration(duration) {
+    const result = [];
+    const endTime = roundTime(duration);
+    if (!endTime || endTime <= 0) {
+      return [makeEmptySlot(0, DEFAULT_COL_DUR, 0)];
+    }
+
+    let t = 0;
+    let index = 0;
+    while (t < endTime - TIME_EPSILON) {
+      const next = Math.min(t + DEFAULT_COL_DUR, endTime);
+      result.push(makeEmptySlot(t, next, index));
+      t = next;
+      index += 1;
+    }
+    return result;
+  }
+
+  function isImageEmptySlot(slot) {
+    return !slot?.image_url
+      && !slot?.image_path
+      && !(Array.isArray(slot?.candidates) && slot.candidates.length);
+  }
+
+  function isSingleEmptyTimelineSeed() {
+    if (slots.length !== 1 || !audioDuration || audioDuration <= 0) return false;
+    const slot = slots[0];
+    const start = Number(slot.start) || 0;
+    const end = Number(slot.end) || 0;
+    return isImageEmptySlot(slot)
+      && start <= TIME_EPSILON
+      && audioDuration > DEFAULT_COL_DUR + TIME_EPSILON
+      && end <= audioDuration + TIME_EPSILON;
+  }
+
   function normalizeSlotsToAudio() {
     if (!Array.isArray(slots)) slots = [];
     if (!audioDuration || audioDuration <= 0) {
@@ -223,8 +258,8 @@
     }
 
     let changed = false;
-    if (!slots.length) {
-      slots.push(makeEmptySlot(0, audioDuration));
+    if (!slots.length || isSingleEmptyTimelineSeed()) {
+      slots = makeEmptySlotsForDuration(audioDuration);
       return true;
     }
 

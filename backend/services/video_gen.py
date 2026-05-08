@@ -161,7 +161,11 @@ def _generate_segment_simple(
 
 def _get_audio_duration(audio_path: Path, ffmpeg: str) -> float:
     """Return audio duration in seconds using ffprobe."""
-    ffprobe = ffmpeg.replace("ffmpeg", "ffprobe")
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        ffmpeg_path = Path(ffmpeg)
+        ffprobe_name = "ffprobe.exe" if ffmpeg_path.suffix.lower() == ".exe" else "ffprobe"
+        ffprobe = str(ffmpeg_path.with_name(ffprobe_name))
     try:
         result = subprocess.run(
             [ffprobe, "-v", "error", "-show_entries", "format=duration",
