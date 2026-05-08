@@ -20,11 +20,16 @@
   const columnsRow      = document.getElementById('columns-row');
   const addColumnBtn    = document.getElementById('add-column-btn');
   const exportBtn       = document.getElementById('export-btn');
+  const exportShortBtn  = document.getElementById('export-short-btn');
   const downloadBtn     = document.getElementById('download-btn');
+  const downloadShortBtn = document.getElementById('download-short-btn');
   const exportWrap      = document.getElementById('export-progress-wrap');
   const exportBar       = document.getElementById('export-bar');
   const exportMsg       = document.getElementById('export-msg');
   const overlayInput    = document.getElementById('overlay-text-input');
+  const overlaySizeDown = document.getElementById('overlay-size-down');
+  const overlaySizeUp   = document.getElementById('overlay-size-up');
+  const overlaySizeLabel = document.getElementById('overlay-size-label');
   const overlaySaved    = document.getElementById('overlay-text-saved');
   const overlayError    = document.getElementById('overlay-text-error');
   const replaceInput    = document.getElementById('replace-input');
@@ -101,10 +106,16 @@
   let   PX_PER_SEC      = 30;  // pixels per second for column widths (mutable via zoom slider)
   const MIN_SLOT_DUR    = 2;   // minimum slot duration in seconds
   const DEFAULT_COL_DUR = 5;   // default duration for new columns (seconds)
+  const TIME_EPSILON    = 0.001;
+  const OVERLAY_FONT_DEFAULT = 64;
+  const OVERLAY_FONT_MIN = 36;
+  const OVERLAY_FONT_MAX = 112;
+  const OVERLAY_FONT_STEP = 4;
 
   // -- State ------------------------------------------------
   let slots            = [];
   let audioDuration    = 0;
+  let overlayFontSize  = OVERLAY_FONT_DEFAULT;
   let activeIndex      = -1;
   let ws               = null;
   let replacingIdx     = null;
@@ -128,10 +139,15 @@
       return;
     }
 
+    audioDuration = Number(job.audio_duration) || 0;
     slots = job.slots || [];
+    const repairedOnLoad = normalizeSlotsToAudio();
     // Restore overlay text if already saved
+    overlayFontSize = clampOverlayFontSize(job.overlay_font_size);
     if (job.overlay_text) overlayInput.value = job.overlay_text;
     buildTimeline(slots);
+    updateOverlayControls();
+    if (repairedOnLoad) saveSlots();
 
     ws = WaveSurfer.create({
       container:     '#waveform',
@@ -149,13 +165,18 @@
     });
 
     ws.on('ready', (dur) => {
-      audioDuration = dur;
+      audioDuration = Number(dur) || audioDuration;
       wavesurferReady = true;
-      totalTimeEl.textContent = formatTime(dur);
+      totalTimeEl.textContent = formatTime(audioDuration);
       exportBtn.disabled = false;
-      // Set waveform container width = total columns width so both scroll together
-      _setWaveformWidth();
-      syncZoom();
+      exportShortBtn.disabled = false;
+      const repaired = normalizeSlotsToAudio();
+      if (repaired) {
+        buildTimeline(slots);
+        saveSlots();
+      } else {
+        syncZoom();
+      }
     });
     ws.on('timeupdate', (t) => {
       currentTimeEl.textContent = formatTime(t);
@@ -175,6 +196,107 @@
     timelineScroll.style.display = 'flex';
     timelineScroll.classList.remove('hidden');
     if (wavesurferReady && audioDuration > 0) syncZoom();
+  }
+
+  function roundTime(value) {
+    return Math.round(Math.max(0, value) * 1000) / 1000;
+  }
+
+  function makeEmptySlot(start, end) {
+    return {
+      index: slots.length,
+      start: roundTime(start),
+      end: roundTime(end),
+      text: '',
+      prompt: '',
+      image_url: null,
+      image_path: null,
+      candidates: [],
+    };
+  }
+
+  function normalizeSlotsToAudio() {
+    if (!Array.isArray(slots)) slots = [];
+    if (!audioDuration || audioDuration <= 0) {
+      slots.forEach((slot, i) => { slot.index = i; });
+      return false;
+    }
+
+    let changed = false;
+    if (!slots.length) {
+      slots.push(makeEmptySlot(0, audioDuration));
+      return true;
+    }
+
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i];
+      const fallbackStart = i > 0 ? Number(slots[i - 1].end) || 0 : 0;
+      let start = Number(slot.start);
+      let end = Number(slot.end);
+
+      if (!Number.isFinite(start)) { start = fallbackStart; changed = true; }
+      if (!Number.isFinite(end) || end <= start) {
+        end = start + Math.min(DEFAULT_COL_DUR, Math.max(MIN_SLOT_DUR, audioDuration - start));
+        changed = true;
+      }
+
+      if (i === 0 && Math.abs(start) > TIME_EPSILON) {
+        start = 0;
+        changed = true;
+      }
+
+      slot.start = roundTime(start);
+      slot.end = roundTime(end);
+    }
+
+    for (let i = 1; i < slots.length; i++) {
+      const prev = slots[i - 1];
+      const slot = slots[i];
+      const prevEnd = Number(prev.end) || 0;
+      let start = Number(slot.start) || prevEnd;
+
+      if (start > prevEnd + TIME_EPSILON) {
+        prev.end = roundTime(start);
+        changed = true;
+      } else if (start < prevEnd - TIME_EPSILON) {
+        start = prevEnd;
+        slot.start = roundTime(start);
+        changed = true;
+      }
+
+      if ((Number(slot.end) || 0) <= start + TIME_EPSILON) {
+        slot.end = roundTime(start + Math.min(DEFAULT_COL_DUR, Math.max(MIN_SLOT_DUR, audioDuration - start)));
+        changed = true;
+      }
+    }
+
+    for (let i = 0; i < slots.length; i++) {
+      if (slots[i].start >= audioDuration - TIME_EPSILON) {
+        slots.splice(i);
+        changed = true;
+        break;
+      }
+      if (slots[i].end > audioDuration + TIME_EPSILON) {
+        slots[i].end = roundTime(audioDuration);
+        if (i < slots.length - 1) slots.splice(i + 1);
+        changed = true;
+        break;
+      }
+    }
+
+    if (!slots.length) {
+      slots.push(makeEmptySlot(0, audioDuration));
+      changed = true;
+    }
+
+    const last = slots[slots.length - 1];
+    if (last.end < audioDuration - TIME_EPSILON) {
+      last.end = roundTime(audioDuration);
+      changed = true;
+    }
+
+    slots.forEach((slot, i) => { slot.index = i; });
+    return changed;
   }
 
   function createCard(slot, i) {
@@ -371,6 +493,28 @@
 
     // img goes in first so overlays stack on top reliably
     wrapper.appendChild(img);
+
+    if (slotIdx === 0 && candidateIdx === 0) {
+      const overlayPreview = document.createElement('div');
+      overlayPreview.className = 'overlay-preview-text';
+      overlayPreview.textContent = overlayInput.value.trim();
+      overlayPreview.style.position = 'absolute';
+      overlayPreview.style.top = '12%';
+      overlayPreview.style.left = '50%';
+      overlayPreview.style.width = '90%';
+      overlayPreview.style.transform = 'translateX(-50%)';
+      overlayPreview.style.color = '#fff';
+      overlayPreview.style.fontWeight = '800';
+      overlayPreview.style.lineHeight = '1.08';
+      overlayPreview.style.textAlign = 'center';
+      overlayPreview.style.overflowWrap = 'anywhere';
+      overlayPreview.style.textShadow = '0 0 2px #000, 0 1px 2px #000, 0 2px 4px rgba(0,0,0,0.9)';
+      overlayPreview.style.zIndex = '3';
+      overlayPreview.style.pointerEvents = 'none';
+      overlayPreview.style.fontSize = `${getOverlayPreviewFontSize()}px`;
+      overlayPreview.style.display = overlayPreview.textContent ? '' : 'none';
+      wrapper.appendChild(overlayPreview);
+    }
 
     if (isSelected) {
       const check = document.createElement('div');
@@ -736,34 +880,51 @@
 
   // -- Add column -------------------------------------------
   function addColumn() {
+    if (normalizeSlotsToAudio()) buildTimeline(slots);
+
     const capDuration = audioDuration > 0 ? audioDuration : 3600;
     const lastSlot = slots[slots.length - 1];
-    const newStart = lastSlot ? Math.round(lastSlot.end * 100) / 100 : 0;
-    const newEnd   = Math.min(newStart + DEFAULT_COL_DUR, capDuration);
+    const newStart = lastSlot ? roundTime(lastSlot.end) : 0;
+    const newEnd = Math.min(newStart + DEFAULT_COL_DUR, capDuration);
+
     if (newEnd - newStart < MIN_SLOT_DUR) {
-      // No room left: try to squeeze a minimum-duration column
-      const minEnd = Math.min(newStart + MIN_SLOT_DUR, capDuration);
-      if (minEnd <= newStart) {
-        alert('No hay espacio en el audio para añadir otra columna.');
+      if (!splitLastColumn()) {
+        alert('No hay espacio suficiente para añadir otra columna.');
         return;
       }
+      buildTimeline(slots);
+      const wrapper = document.getElementById(`wrapper-${slots.length - 1}`);
+      if (wrapper) wrapper.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'end' });
+      saveSlots();
+      syncZoom();
+      return;
     }
-    const newSlot = {
-      index: slots.length,
-      start: newStart,
-      end: Math.min(newStart + DEFAULT_COL_DUR, capDuration),
-      text: '',
-      prompt: '',
-      image_url: null,
-      image_path: null,
-      candidates: [],
-    };
+
+    const newSlot = makeEmptySlot(newStart, newEnd);
     slots.push(newSlot);
     const wrapper = createCard(newSlot, slots.length - 1);
     columnsRow.appendChild(wrapper);
     wrapper.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'end' });
     saveSlots();
     syncZoom();  // update waveform width + zoom
+  }
+
+  function splitLastColumn() {
+    const last = slots[slots.length - 1];
+    if (!last) return false;
+
+    const lastDuration = Number(last.end) - Number(last.start);
+    if (!Number.isFinite(lastDuration) || lastDuration < MIN_SLOT_DUR * 2) return false;
+
+    const newDuration = Math.min(DEFAULT_COL_DUR, Math.max(MIN_SLOT_DUR, lastDuration / 2));
+    const splitDuration = Math.min(newDuration, lastDuration - MIN_SLOT_DUR);
+    const splitStart = roundTime(Number(last.end) - splitDuration);
+    const newSlot = makeEmptySlot(splitStart, last.end);
+
+    last.end = splitStart;
+    slots.push(newSlot);
+    slots.forEach((slot, i) => { slot.index = i; });
+    return true;
   }
 
   // -- Delete column ----------------------------------------
@@ -800,23 +961,73 @@
 
   // -- Overlay text: autosave with debounce ----------------
   let _overlayDebounce = null;
-  overlayInput.addEventListener('input', () => {
-    overlayError.classList.add('hidden');
+  function clampOverlayFontSize(value) {
+    const parsed = Number(value);
+    const safeValue = Number.isFinite(parsed) ? parsed : OVERLAY_FONT_DEFAULT;
+    const stepped = Math.round(safeValue / OVERLAY_FONT_STEP) * OVERLAY_FONT_STEP;
+    return Math.max(OVERLAY_FONT_MIN, Math.min(OVERLAY_FONT_MAX, stepped));
+  }
+
+  function getOverlayPreviewFontSize() {
+    return Math.max(12, Math.min(28, Math.round(overlayFontSize / 4)));
+  }
+
+  function renderOverlayPreview() {
+    const text = overlayInput.value.trim();
+    document.querySelectorAll('.overlay-preview-text').forEach((el) => {
+      el.textContent = text;
+      el.style.fontSize = `${getOverlayPreviewFontSize()}px`;
+      el.style.display = text ? '' : 'none';
+    });
+  }
+
+  function updateOverlayControls() {
+    overlayFontSize = clampOverlayFontSize(overlayFontSize);
+    if (overlaySizeLabel) overlaySizeLabel.textContent = `${overlayFontSize}px`;
+    if (overlaySizeDown) overlaySizeDown.disabled = overlayFontSize <= OVERLAY_FONT_MIN;
+    if (overlaySizeUp) overlaySizeUp.disabled = overlayFontSize >= OVERLAY_FONT_MAX;
+    renderOverlayPreview();
+  }
+
+  async function saveOverlaySettings() {
+    await fetch(`/api/jobs/${jobId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        overlay_text: overlayInput.value.trim(),
+        overlay_font_size: overlayFontSize,
+      }),
+    });
+  }
+
+  function queueOverlaySave() {
     overlaySaved.classList.add('hidden');
     clearTimeout(_overlayDebounce);
     _overlayDebounce = setTimeout(async () => {
-      const text = overlayInput.value.trim();
-      if (!text) return;
       try {
-        await fetch(`/api/jobs/${jobId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ overlay_text: text }),
-        });
+        await saveOverlaySettings();
         overlaySaved.classList.remove('hidden');
         setTimeout(() => overlaySaved.classList.add('hidden'), 2000);
       } catch (_) {}
     }, 800);
+  }
+
+  overlayInput.addEventListener('input', () => {
+    overlayError.classList.add('hidden');
+    renderOverlayPreview();
+    queueOverlaySave();
+  });
+
+  overlaySizeDown.addEventListener('click', () => {
+    overlayFontSize = clampOverlayFontSize(overlayFontSize - OVERLAY_FONT_STEP);
+    updateOverlayControls();
+    queueOverlaySave();
+  });
+
+  overlaySizeUp.addEventListener('click', () => {
+    overlayFontSize = clampOverlayFontSize(overlayFontSize + OVERLAY_FONT_STEP);
+    updateOverlayControls();
+    queueOverlaySave();
   });
 
   // -- Export ----------------------------------------------
@@ -834,14 +1045,11 @@
 
     // Save overlay text before exporting (in case debounce hasn't fired yet)
     try {
-      await fetch(`/api/jobs/${jobId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ overlay_text: overlayText }),
-      });
+      await saveOverlaySettings();
     } catch (_) {}
 
     exportBtn.disabled = true;
+    exportShortBtn.disabled = true;
     exportBtn.textContent = 'Exportando...';
     exportWrap.classList.remove('hidden');
     setExportProgress(0, 'Iniciando exportacion...');
@@ -851,6 +1059,7 @@
       if (!res.ok) throw new Error(await res.text());
     } catch (err) {
       exportBtn.disabled = false;
+      exportShortBtn.disabled = false;
       exportBtn.textContent = 'Exportar Video';
       setExportProgress(0, `Error: ${err.message}`);
       return;
@@ -868,35 +1077,105 @@
       downloadBtn.href = d.download_url;
       downloadBtn.classList.remove('hidden');
       exportBtn.classList.add('hidden');
+      exportShortBtn.disabled = false;
     });
     es.addEventListener('export_error', (e) => {
       es.close();
       const d = JSON.parse(e.data);
       setExportProgress(0, `Error: ${d.message}`);
       exportBtn.disabled = false;
+      exportShortBtn.disabled = false;
       exportBtn.textContent = 'Exportar Video';
     });
     es.onerror = () => { es.close(); pollExport(); };
   });
 
-  async function pollExport() {
+  exportShortBtn.addEventListener('click', async () => {
+    const overlayText = overlayInput.value.trim();
+    if (!overlayText) {
+      overlayError.classList.remove('hidden');
+      overlayInput.focus();
+      overlayInput.classList.add('border-red-500');
+      setTimeout(() => overlayInput.classList.remove('border-red-500'), 2000);
+      return;
+    }
+    overlayError.classList.add('hidden');
+
+    try {
+      await saveOverlaySettings();
+    } catch (_) {}
+
+    exportBtn.disabled = true;
+    exportShortBtn.disabled = true;
+    exportShortBtn.textContent = 'Exportando...';
+    exportWrap.classList.remove('hidden');
+    setExportProgress(0, 'Iniciando exportacion del short...');
+
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/export-short`, { method: 'POST' });
+      if (!res.ok) throw new Error(await res.text());
+    } catch (err) {
+      exportBtn.disabled = false;
+      exportShortBtn.disabled = false;
+      exportShortBtn.textContent = 'Exportar Short';
+      setExportProgress(0, `Error: ${err.message}`);
+      return;
+    }
+
+    const es = new EventSource(`/api/jobs/${jobId}/stream`);
+    es.addEventListener('export_progress', (e) => {
+      const d = JSON.parse(e.data);
+      setExportProgress(d.percent, d.message);
+    });
+    es.addEventListener('export_done', (e) => {
+      es.close();
+      const d = JSON.parse(e.data);
+      setExportProgress(100, 'Short listo!');
+      downloadShortBtn.href = d.download_url;
+      downloadShortBtn.classList.remove('hidden');
+      exportShortBtn.classList.add('hidden');
+      exportBtn.disabled = false;
+    });
+    es.addEventListener('export_error', (e) => {
+      es.close();
+      const d = JSON.parse(e.data);
+      setExportProgress(0, `Error: ${d.message}`);
+      exportBtn.disabled = false;
+      exportShortBtn.disabled = false;
+      exportShortBtn.textContent = 'Exportar Short';
+    });
+    es.onerror = () => {
+      es.close();
+      pollExport('short_download_url', downloadShortBtn, exportShortBtn, 'Exportar Short');
+    };
+  });
+
+  async function pollExport(
+    downloadField = 'download_url',
+    downloadLink = downloadBtn,
+    button = exportBtn,
+    idleText = 'Exportar Video',
+  ) {
     const id = setInterval(async () => {
       try {
         const res = await fetch(`/api/jobs/${jobId}`);
         const job = await res.json();
         setExportProgress(job.progress_percent || 0, job.progress_message || '');
-        if (job.status === 'done' && job.download_url) {
+        if (job.status === 'done' && job[downloadField]) {
           clearInterval(id);
-          setExportProgress(100, 'Video listo!');
-          downloadBtn.href = job.download_url;
-          downloadBtn.classList.remove('hidden');
-          exportBtn.classList.add('hidden');
+          setExportProgress(100, downloadField === 'short_download_url' ? 'Short listo!' : 'Video listo!');
+          downloadLink.href = job[downloadField];
+          downloadLink.classList.remove('hidden');
+          button.classList.add('hidden');
+          exportBtn.disabled = false;
+          exportShortBtn.disabled = false;
         }
         if (job.status === 'error') {
           clearInterval(id);
           setExportProgress(0, `Error: ${job.error}`);
           exportBtn.disabled = false;
-          exportBtn.textContent = 'Exportar Video';
+          exportShortBtn.disabled = false;
+          button.textContent = idleText;
         }
       } catch (_) {}
     }, 2000);

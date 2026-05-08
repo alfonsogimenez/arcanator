@@ -33,6 +33,13 @@
       >
         Exportar Video
       </button>
+      <button
+        id="export-short-btn"
+        class="px-5 py-2 bg-fuchsia-600 hover:bg-fuchsia-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg font-semibold text-sm transition-colors"
+        disabled
+      >
+        Exportar Short
+      </button>
       <!-- Download button (hidden until export done) -->
       <a
         id="download-btn"
@@ -41,6 +48,14 @@
         download="arcanator.mp4"
       >
         ⬇ Descargar MP4
+      </a>
+      <a
+        id="download-short-btn"
+        href="#"
+        class="hidden px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-semibold text-sm transition-colors"
+        download="arcanator-short.mp4"
+      >
+        ⬇ Descargar Short
       </a>
     </div>
   </header>
@@ -106,6 +121,21 @@
       placeholder="Texto obligatorio · aparece del seg. 2 al 7…"
       class="flex-1 bg-gray-800 text-sm text-gray-100 rounded-lg px-3 py-1.5 border border-gray-700 focus:border-violet-500 focus:outline-none"
     />
+    <div class="flex items-center gap-1 shrink-0" role="group" aria-label="Tamaño del texto de cabecera">
+      <button
+        id="overlay-size-down"
+        type="button"
+        title="Encoger texto"
+        class="w-8 h-8 flex items-center justify-center rounded-md border border-gray-700 text-xs font-bold text-gray-300 hover:border-violet-500 hover:text-violet-300 disabled:opacity-40 disabled:cursor-not-allowed"
+      >A-</button>
+      <span id="overlay-size-label" class="w-12 text-center text-xs text-gray-400 tabular-nums">64px</span>
+      <button
+        id="overlay-size-up"
+        type="button"
+        title="Agrandar texto"
+        class="w-8 h-8 flex items-center justify-center rounded-md border border-gray-700 text-xs font-bold text-gray-300 hover:border-violet-500 hover:text-violet-300 disabled:opacity-40 disabled:cursor-not-allowed"
+      >A+</button>
+    </div>
     <span id="overlay-text-saved" class="text-xs text-green-400 hidden">✓ guardado</span>
     <span id="overlay-text-error" class="text-xs text-red-400 hidden">⚠ obligatorio</span>
   </div>

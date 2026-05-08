@@ -11,6 +11,7 @@ Quality: H.264 High Profile, CRF 18, AAC 192 kbps, 1920×1080 @ 25 fps.
 import subprocess
 import shutil
 import random
+import textwrap
 from pathlib import Path
 from typing import List, Dict, Any, Callable
 
@@ -53,22 +54,33 @@ def check_ffmpeg() -> str:
     return path
 
 
-def _build_zoompan(frames: int, pan_x: str, pan_y: str) -> str:
+def _cover_filter(width: int, height: int, scale_factor: float = 1.0) -> str:
+    base_width = max(2, int(round(width * scale_factor / 2) * 2))
+    base_height = max(2, int(round(height * scale_factor / 2) * 2))
+    return (
+        f"scale={base_width}:{base_height}:"
+        f"force_original_aspect_ratio=increase:flags=lanczos,"
+        f"crop={base_width}:{base_height}:(iw-{base_width})/2:(ih-{base_height})/2,"
+        f"setsar=1"
+    )
+
+
+def _build_zoompan(frames: int, pan_x: str, pan_y: str, width: int, height: int) -> str:
     """Build zoompan + fade filter string for one segment."""
     # Deterministic time-based zoom: each frame computes its exact value from on/d,
     # avoiding the floating-point accumulation of the incremental 'zoom+delta' pattern
     # which causes the visible micro-jitter on playback.
     zoom_expr = f"1.0+0.18*on/{frames}"
 
-    # Scale source image to 1.5× before zoompan (2× uses too much RAM on low-memory servers)
+    # Pre-crop to the output aspect before zoompan so vertical exports never stretch images.
     vf = (
-        f"scale={int(WIDTH * 1.5)}:{int(HEIGHT * 1.5)}:flags=lanczos,"
+        f"{_cover_filter(width, height, 1.5)},"
         f"zoompan="
         f"z='{zoom_expr}':"
         f"x='{pan_x}':"
         f"y='{pan_y}':"
         f"d={frames}:"
-        f"s={WIDTH}x{HEIGHT}:"
+        f"s={width}x{height}:"
         f"fps={FPS},"
         f"fade=t=in:st=0:d={FADE_DURATION},"
         f"fade=t=out:st={max(0.0, frames / FPS - FADE_DURATION):.3f}:d={FADE_DURATION}"
@@ -82,6 +94,8 @@ def _generate_segment(
     output_path: Path,
     direction_index: int,
     ffmpeg: str,
+    width: int,
+    height: int,
 ) -> bool:
     """Encode a single image into a video segment with Ken-Burns effect."""
     if duration < 1.0:
@@ -89,7 +103,7 @@ def _generate_segment(
 
     frames = max(int(round(duration * FPS)), FPS)
     pan_x, pan_y = _KB_PANS[direction_index % len(_KB_PANS)]
-    vf = _build_zoompan(frames, pan_x, pan_y)
+    vf = _build_zoompan(frames, pan_x, pan_y, width, height)
 
     cmd = [
         ffmpeg, "-y",
@@ -119,6 +133,8 @@ def _generate_segment_simple(
     duration: float,
     output_path: Path,
     ffmpeg: str,
+    width: int,
+    height: int,
 ) -> bool:
     """Fallback: static scaled segment without zoompan."""
     if duration < 1.0:
@@ -130,8 +146,7 @@ def _generate_segment_simple(
         "-i", str(image_path),
         "-t", f"{duration:.3f}",
         "-vf", (
-            f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
-            f"crop={WIDTH}:{HEIGHT},"
+            f"{_cover_filter(width, height)},"
             f"fade=t=in:st=0:d={FADE_DURATION},"
             f"fade=t=out:st={max(0.0, duration - FADE_DURATION):.3f}:d={FADE_DURATION}"
         ),
@@ -158,6 +173,130 @@ def _get_audio_duration(audio_path: Path, ffmpeg: str) -> float:
         return 0.0
 
 
+def _as_float(value: Any, fallback: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _wrap_overlay_text(text: str, font_size: int, output_width: int) -> str:
+    clean_text = " ".join(str(text).split())
+    if not clean_text:
+        return ""
+
+    usable_width = max(160.0, output_width * 0.80)
+    average_char_width = max(8.0, font_size * 0.58)
+    max_chars = max(8, int(usable_width / average_char_width))
+    return "\n".join(
+        textwrap.wrap(
+            clean_text,
+            width=max_chars,
+            break_long_words=True,
+            break_on_hyphens=False,
+        )
+    )
+
+
+def _escape_drawtext_text(text: str) -> str:
+    return (
+        text
+        .replace("\\", "\\\\")
+        .replace("'", "\\'")
+        .replace(":", "\\:")
+        .replace("%", "\\%")
+    )
+
+
+def _normalize_slots_to_audio_duration(
+    slots: List[Dict[str, Any]],
+    audio_duration: float,
+) -> List[Dict[str, Any]]:
+    """Close timeline gaps by extending the previous image slot."""
+    if not slots:
+        return []
+
+    normalized: List[Dict[str, Any]] = []
+    for src in slots:
+        slot = dict(src)
+        fallback_start = normalized[-1]["end"] if normalized else 0.0
+        start = _as_float(slot.get("start"), fallback_start)
+        end = _as_float(slot.get("end"), start)
+        if end <= start:
+            end = start + 1.0
+        slot["start"] = max(0.0, start)
+        slot["end"] = max(0.0, end)
+        normalized.append(slot)
+
+    eps = 0.001
+    normalized[0]["start"] = 0.0
+    for i in range(1, len(normalized)):
+        prev = normalized[i - 1]
+        slot = normalized[i]
+        prev_end = _as_float(prev.get("end"), 0.0)
+        start = _as_float(slot.get("start"), prev_end)
+
+        if start > prev_end + eps:
+            prev["end"] = start
+        elif start < prev_end - eps:
+            start = prev_end
+            slot["start"] = start
+
+        if _as_float(slot.get("end"), start) <= start + eps:
+            slot["end"] = start + 1.0
+
+    if audio_duration > 0:
+        capped: List[Dict[str, Any]] = []
+        for slot in normalized:
+            if _as_float(slot.get("start"), 0.0) >= audio_duration - eps:
+                break
+            if _as_float(slot.get("end"), 0.0) > audio_duration + eps:
+                slot["end"] = audio_duration
+                capped.append(slot)
+                break
+            capped.append(slot)
+        normalized = capped
+        if normalized and _as_float(normalized[-1].get("end"), 0.0) < audio_duration - eps:
+            normalized[-1]["end"] = audio_duration
+
+    for i, slot in enumerate(normalized):
+        slot["index"] = i
+        slot["start"] = round(_as_float(slot.get("start"), 0.0), 6)
+        slot["end"] = round(_as_float(slot.get("end"), slot["start"]), 6)
+
+    return normalized
+
+
+def _limit_slots_to_duration(
+    slots: List[Dict[str, Any]],
+    max_duration: float,
+) -> List[Dict[str, Any]]:
+    if max_duration <= 0:
+        return []
+
+    limited: List[Dict[str, Any]] = []
+    eps = 0.001
+    for src in slots:
+        start = _as_float(src.get("start"), 0.0)
+        end = _as_float(src.get("end"), start)
+        if start >= max_duration - eps:
+            break
+        slot = dict(src)
+        slot["end"] = min(end, max_duration)
+        if slot["end"] > start + eps:
+            limited.append(slot)
+        if end >= max_duration - eps:
+            break
+
+    if limited:
+        limited[-1]["end"] = max_duration
+    for i, slot in enumerate(limited):
+        slot["index"] = i
+        slot["start"] = round(_as_float(slot.get("start"), 0.0), 6)
+        slot["end"] = round(_as_float(slot.get("end"), slot["start"]), 6)
+    return limited
+
+
 def assemble_video(
     slots: List[Dict[str, Any]],
     audio_path: Path,
@@ -165,6 +304,10 @@ def assemble_video(
     output_path: Path,
     on_progress: Callable[[str, int], None],
     overlay_text: str = "",
+    overlay_font_size: int = 64,
+    output_width: int = WIDTH,
+    output_height: int = HEIGHT,
+    max_duration: float | None = None,
 ) -> None:
     """
     Build the final MP4:
@@ -173,8 +316,17 @@ def assemble_video(
       3. Mux audio track.
     """
     ffmpeg = check_ffmpeg()
-    segments_dir = job_dir / "segments"
+    work_suffix = "_short" if max_duration or output_width != WIDTH or output_height != HEIGHT else ""
+    segments_dir = job_dir / f"segments{work_suffix}"
     segments_dir.mkdir(exist_ok=True)
+
+    audio_duration = _get_audio_duration(audio_path, ffmpeg)
+    if audio_duration > 0:
+        slots = _normalize_slots_to_audio_duration(slots, audio_duration)
+    target_duration = audio_duration
+    if max_duration is not None:
+        target_duration = min(max_duration, audio_duration) if audio_duration > 0 else max_duration
+        slots = _limit_slots_to_duration(slots, target_duration)
 
     total = len(slots)
     if total == 0:
@@ -182,11 +334,10 @@ def assemble_video(
 
     # Extend the last slot to cover the full audio duration + 1 s of tail
     # so the last image doesn't cut exactly on the last audio frame.
-    audio_duration = _get_audio_duration(audio_path, ffmpeg)
-    if audio_duration > 0:
+    if target_duration > 0:
         slots = list(slots)  # don't mutate the original
         last = dict(slots[-1])
-        last["end"] = audio_duration + 1.0
+        last["end"] = target_duration + 1.0
         slots[-1] = last
 
     # Randomise Ken-Burns direction per slot (deterministic via index)
@@ -211,9 +362,9 @@ def assemble_video(
         percent = int(i / total * 78)
         on_progress(f"Codificando segmento {i + 1} / {total}...", percent)
 
-        ok = _generate_segment(image_path, duration, seg_path, directions[i], ffmpeg)
+        ok = _generate_segment(image_path, duration, seg_path, directions[i], ffmpeg, output_width, output_height)
         if not ok:
-            ok = _generate_segment_simple(image_path, duration, seg_path, ffmpeg)
+            ok = _generate_segment_simple(image_path, duration, seg_path, ffmpeg, output_width, output_height)
         if not ok:
             raise RuntimeError(f"No se pudo generar el segmento {i}. Comprueba la instalación de FFmpeg.")
 
@@ -224,7 +375,7 @@ def assemble_video(
     # ------------------------------------------------------------------ #
     on_progress("Concatenando segmentos...", 80)
 
-    concat_file = job_dir / "concat.txt"
+    concat_file = job_dir / f"concat{work_suffix}.txt"
     with open(concat_file, "w", encoding="utf-8") as f:
         for seg in segment_paths:
             # FFmpeg concat demuxer requires forward slashes and single-quoted paths
@@ -249,33 +400,41 @@ def assemble_video(
 
     vf_overlay = ""
     if overlay_text:
-        # Escape special characters for FFmpeg drawtext
-        safe_text = (
-            overlay_text
-            .replace("\\", "\\\\")
-            .replace("'", "\\'")
-            .replace(":", "\\:")
-        )
+        overlay_font_size = max(36, min(112, int(round(_as_float(overlay_font_size, 64)))))
+        overlay_border = max(2, round(overlay_font_size / 20))
+        overlay_line_spacing = max(4, round(overlay_font_size * 0.16))
+        overlay_lines = [
+            _escape_drawtext_text(line)
+            for line in _wrap_overlay_text(overlay_text, overlay_font_size, output_width).splitlines()
+            if line
+        ]
         if _font_found:
             # FFmpeg drawtext: colon in Windows drive letter must be escaped as \:
             _font_ffmpeg = _font_found.replace("\\", "/").replace(":", "\\:")
             font_clause = f"fontfile='{_font_ffmpeg}':"
         else:
             font_clause = ""
-        vf_overlay = (
-            f"setpts=PTS-STARTPTS,"
-            f"drawtext="
-            f"{font_clause}"
-            f"text='{safe_text}':"
-            f"fontsize=64:"
-            f"fontcolor=white:"
-            f"borderw=3:bordercolor=black:"
-            f"x=(w-text_w)/2:"
-            f"y=h*0.12:"
-            f"enable='between(t,2,7)'"
-        )
+        line_height = overlay_font_size + overlay_line_spacing
+        drawtext_filters = []
+        for line_index, line in enumerate(overlay_lines):
+            y_expr = f"h*0.09+{line_index * line_height}"
+            drawtext_filters.append(
+                f"drawtext="
+                f"{font_clause}"
+                f"text='{line}':"
+                f"fontsize={overlay_font_size}:"
+                f"fontcolor=white:"
+                f"borderw={overlay_border}:bordercolor=black:"
+                f"fix_bounds=1:"
+                f"x=(w-text_w)/2:"
+                f"y={y_expr}:"
+                f"enable='between(t,2,7)'"
+            )
+        if drawtext_filters:
+            vf_overlay = "setpts=PTS-STARTPTS," + ",".join(drawtext_filters)
 
     if vf_overlay:
+        output_limit_args = ["-t", f"{target_duration:.3f}"] if max_duration is not None and target_duration > 0 else []
         cmd_final = [
             ffmpeg, "-y",
             "-f", "concat", "-safe", "0",
@@ -291,9 +450,11 @@ def assemble_video(
             "-c:a", "aac",
             "-b:a", AUDIO_BITRATE,
             "-movflags", "+faststart",
+            *output_limit_args,
             str(output_path),
         ]
     else:
+        output_limit_args = ["-t", f"{target_duration:.3f}"] if max_duration is not None and target_duration > 0 else []
         cmd_final = [
             ffmpeg, "-y",
             "-f", "concat", "-safe", "0",
@@ -305,6 +466,7 @@ def assemble_video(
             "-c:a", "aac",
             "-b:a", AUDIO_BITRATE,
             "-movflags", "+faststart",
+            *output_limit_args,
             str(output_path),
         ]
     result = subprocess.run(cmd_final, capture_output=True, text=True, encoding="utf-8", errors="replace")

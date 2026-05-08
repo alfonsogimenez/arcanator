@@ -13,7 +13,7 @@ try:
     load_dotenv(Path(__file__).parent.parent / ".env")
 except ImportError:
     pass
-from typing import Dict, Optional
+from typing import Dict, Optional, List, Any
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -98,6 +98,12 @@ async def cleanup_old_jobs(keep: int = 3):
 _jobs: Dict[str, dict] = {}
 _event_queues: Dict[str, queue.Queue] = {}
 _lock = threading.Lock()
+OVERLAY_FONT_SIZE_DEFAULT = 64
+OVERLAY_FONT_SIZE_MIN = 36
+OVERLAY_FONT_SIZE_MAX = 112
+SHORT_MAX_DURATION = 55.0
+SHORT_WIDTH = 1080
+SHORT_HEIGHT = 1920
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +183,116 @@ def _push_event(job_id: str, event_type: str, data: dict):
             pass  # Drop if queue full to avoid memory leak
 
 
+def _round_seconds(value: float) -> float:
+    return round(max(0.0, float(value)), 6)
+
+
+def _as_float(value: Any, fallback: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _overlay_font_size(value: Any) -> int:
+    size = int(round(_as_float(value, OVERLAY_FONT_SIZE_DEFAULT)))
+    return max(OVERLAY_FONT_SIZE_MIN, min(OVERLAY_FONT_SIZE_MAX, size))
+
+
+def _probe_audio_duration(job: dict) -> float:
+    """Return the audio duration for a job and tolerate missing FFmpeg locally."""
+    cached = _as_float(job.get("audio_duration"), 0.0)
+    if cached > 0:
+        return cached
+
+    audio_path = job.get("audio_path")
+    if not audio_path:
+        return 0.0
+
+    try:
+        from backend.services.video_gen import _get_audio_duration, check_ffmpeg
+        duration = _get_audio_duration(Path(audio_path), check_ffmpeg())
+        if duration > 0:
+            return duration
+    except Exception as exc:
+        print(f"[main] No se pudo calcular la duracion de audio: {exc}")
+
+    slots = job.get("slots") or []
+    slot_end = max((_as_float(s.get("end"), 0.0) for s in slots if isinstance(s, dict)), default=0.0)
+    return slot_end if slot_end > 0 else 0.0
+
+
+def _ensure_audio_duration(job_id: str, job: dict) -> float:
+    duration = _probe_audio_duration(job)
+    if duration > 0 and not job.get("audio_duration"):
+        _update_job(job_id, audio_duration=duration)
+    return duration
+
+
+def _normalize_slots_to_duration(slots: List[dict], audio_duration: float) -> List[dict]:
+    """Close gaps/overlaps so image slots cover the audio timeline continuously."""
+    if not isinstance(slots, list):
+        return []
+
+    normalized: List[dict] = []
+    for src in slots:
+        if not isinstance(src, dict):
+            continue
+        slot = dict(src)
+        fallback_start = normalized[-1]["end"] if normalized else 0.0
+        start = _as_float(slot.get("start"), fallback_start)
+        end = _as_float(slot.get("end"), start)
+        if end <= start:
+            end = start + 1.0
+        slot["start"] = _round_seconds(start)
+        slot["end"] = _round_seconds(end)
+        normalized.append(slot)
+
+    if not normalized:
+        return []
+
+    eps = 0.001
+    normalized[0]["start"] = 0.0
+    for i in range(1, len(normalized)):
+        prev = normalized[i - 1]
+        slot = normalized[i]
+        prev_end = _as_float(prev.get("end"), 0.0)
+        start = _as_float(slot.get("start"), prev_end)
+
+        if start > prev_end + eps:
+            prev["end"] = _round_seconds(start)
+        elif start < prev_end - eps:
+            start = prev_end
+            slot["start"] = _round_seconds(start)
+
+        if _as_float(slot.get("end"), start) <= start + eps:
+            slot["end"] = _round_seconds(start + 1.0)
+
+    if audio_duration > 0:
+        capped: List[dict] = []
+        for slot in normalized:
+            if _as_float(slot.get("start"), 0.0) >= audio_duration - eps:
+                break
+            if _as_float(slot.get("end"), 0.0) > audio_duration + eps:
+                slot["end"] = _round_seconds(audio_duration)
+                capped.append(slot)
+                break
+            capped.append(slot)
+        normalized = capped
+
+        if normalized:
+            last = normalized[-1]
+            if _as_float(last.get("end"), 0.0) < audio_duration - eps:
+                last["end"] = _round_seconds(audio_duration)
+
+    for i, slot in enumerate(normalized):
+        slot["index"] = i
+        slot["start"] = _round_seconds(slot.get("start", 0.0))
+        slot["end"] = _round_seconds(slot.get("end", slot["start"]))
+
+    return normalized
+
+
 # ---------------------------------------------------------------------------
 # API: Create job
 # ---------------------------------------------------------------------------
@@ -213,6 +329,7 @@ async def create_job(
         "progress_percent": 0,
         "error": None,
         "download_url": None,
+        "overlay_font_size": OVERLAY_FONT_SIZE_DEFAULT,
         "created_at": time.time(),
     }
     with _lock:
@@ -262,6 +379,8 @@ async def list_jobs(limit: int = 10):
 # ---------------------------------------------------------------------------
 @app.get("/api/jobs/{job_id}")
 async def get_job_status(job_id: str):
+    job = _get_job_or_404(job_id)
+    _ensure_audio_duration(job_id, job)
     return _get_job_or_404(job_id)
 
 
@@ -336,10 +455,12 @@ async def stream_events(job_id: str):
 @app.patch("/api/jobs/{job_id}")
 async def update_job_meta(job_id: str, body: dict):
     _get_job_or_404(job_id)
-    allowed = {"overlay_text"}
+    allowed = {"overlay_text", "overlay_font_size"}
     update = {k: v for k, v in body.items() if k in allowed}
     if not update:
         raise HTTPException(status_code=400, detail="No hay campos válidos para actualizar.")
+    if "overlay_font_size" in update:
+        update["overlay_font_size"] = _overlay_font_size(update["overlay_font_size"])
     _update_job(job_id, **update)
     return {"ok": True}
 
@@ -373,6 +494,9 @@ async def put_slots(job_id: str, body: dict):
         for cand in s.get("candidates", []):
             if not cand.get("path") and cand.get("image_url"):
                 cand["path"] = existing_by_url.get(cand["image_url"], "")
+
+    audio_duration = _ensure_audio_duration(job_id, job)
+    new_slots = _normalize_slots_to_duration(new_slots, audio_duration)
 
     _update_job(job_id, slots=new_slots)
     return {"ok": True, "count": len(new_slots)}
@@ -561,13 +685,51 @@ async def export_video(job_id: str):
     overlay_text = (job.get("overlay_text") or "").strip()
     if not overlay_text:
         raise HTTPException(status_code=422, detail="El texto de cabecera es obligatorio antes de exportar.")
+    overlay_font_size = _overlay_font_size(job.get("overlay_font_size"))
 
     # Reset queue for export events
     with _lock:
         _event_queues[job_id] = queue.Queue(maxsize=2000)
 
     _update_job(job_id, status="exporting", progress_message="Iniciando exportación...", progress_percent=0)
-    thread = threading.Thread(target=_run_export, args=(job_id, overlay_text), daemon=True)
+    thread = threading.Thread(target=_run_export, args=(job_id, overlay_text, overlay_font_size), daemon=True)
+    thread.start()
+    return {"status": "exporting"}
+
+
+@app.post("/api/jobs/{job_id}/export-short")
+async def export_short(job_id: str):
+    job = _get_job_or_404(job_id)
+    if job["status"] == "error" and job.get("slots") and all(
+        s.get("image_path") for s in job["slots"]
+    ):
+        _update_job(job_id, status="ready", error=None)
+        job = _get_job_or_404(job_id)
+    if job["status"] not in ("ready", "done"):
+        raise HTTPException(status_code=400, detail="El job no esta listo para exportar.")
+
+    overlay_text = (job.get("overlay_text") or "").strip()
+    if not overlay_text:
+        raise HTTPException(status_code=422, detail="El texto de cabecera es obligatorio antes de exportar.")
+    overlay_font_size = _overlay_font_size(job.get("overlay_font_size"))
+
+    with _lock:
+        _event_queues[job_id] = queue.Queue(maxsize=2000)
+
+    _update_job(job_id, status="exporting", progress_message="Iniciando exportacion del short...", progress_percent=0)
+    thread = threading.Thread(
+        target=_run_export,
+        args=(job_id, overlay_text, overlay_font_size),
+        kwargs={
+            "output_filename": "short.mp4",
+            "download_field": "short_download_url",
+            "max_duration": SHORT_MAX_DURATION,
+            "output_width": SHORT_WIDTH,
+            "output_height": SHORT_HEIGHT,
+            "done_message": "Short exportado!",
+        },
+        daemon=True,
+    )
     thread.start()
     return {"status": "exporting"}
 
@@ -623,6 +785,7 @@ def _process_job(job_id: str):
                 idx += 1
 
         _update_job(job_id,
+                    audio_duration=audio_duration,
                     slots=initial_slots,
                     status="ready",
                     progress_message="¡Listo para editar!",
@@ -637,7 +800,17 @@ def _process_job(job_id: str):
         traceback.print_exc()
 
 
-def _run_export(job_id: str, overlay_text: str = ""):
+def _run_export(
+    job_id: str,
+    overlay_text: str = "",
+    overlay_font_size: int = OVERLAY_FONT_SIZE_DEFAULT,
+    output_filename: str = "final.mp4",
+    download_field: str = "download_url",
+    max_duration: Optional[float] = None,
+    output_width: int = 1920,
+    output_height: int = 1080,
+    done_message: str = "¡Video exportado!",
+):
     from backend.services.video_gen import assemble_video
 
     try:
@@ -645,18 +818,32 @@ def _run_export(job_id: str, overlay_text: str = ""):
             job = dict(_jobs[job_id])
         job_dir = OUTPUT_DIR / job_id
         audio_path = Path(job["audio_path"])
-        slots = job["slots"]
-        output_path = job_dir / "final.mp4"
+        audio_duration = _probe_audio_duration(job)
+        slots = _normalize_slots_to_duration(job["slots"], audio_duration)
+        if slots != job["slots"] or (audio_duration > 0 and not job.get("audio_duration")):
+            _update_job(job_id, slots=slots, audio_duration=audio_duration)
+        output_path = job_dir / output_filename
 
         def on_progress(message: str, percent: int):
             _update_job(job_id, progress_message=message, progress_percent=percent)
             _push_event(job_id, "export_progress", {"message": message, "percent": percent})
 
-        assemble_video(slots, audio_path, job_dir, output_path, on_progress, overlay_text=overlay_text)
+        assemble_video(
+            slots,
+            audio_path,
+            job_dir,
+            output_path,
+            on_progress,
+            overlay_text=overlay_text,
+            overlay_font_size=overlay_font_size,
+            output_width=output_width,
+            output_height=output_height,
+            max_duration=max_duration,
+        )
 
-        download_url = f"/output/{job_id}/final.mp4"
-        _update_job(job_id, status="done", download_url=download_url, progress_percent=100,
-                    progress_message="¡Video exportado!")
+        download_url = f"/output/{job_id}/{output_filename}"
+        _update_job(job_id, status="done", progress_percent=100,
+                    progress_message=done_message, **{download_field: download_url})
         _push_event(job_id, "export_done", {"download_url": download_url})
 
     except Exception as exc:
