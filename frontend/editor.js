@@ -772,10 +772,28 @@
       alert('Debe haber al menos una columna.');
       return;
     }
+
+    // Get duration of column to delete
+    const deletedDuration = slots[idx].end - slots[idx].start;
+
+    // If not the first column, expand the previous column by the deleted duration
+    if (idx > 0) {
+      slots[idx - 1].end += deletedDuration;
+    } else if (idx < slots.length - 1) {
+      // If deleting the first column, expand the next column backwards
+      slots[idx + 1].start -= deletedDuration;
+    }
+
+    // Remove the column
     slots.splice(idx, 1);
+    
+    // Update all indices
     slots.forEach((s, i) => { s.index = i; });
+    
+    // Rebuild and save
     buildTimeline(slots);
     saveSlots();
+    syncZoom();
   }
 
   addColumnBtn.addEventListener('click', addColumn);

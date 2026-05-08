@@ -5,7 +5,7 @@ REM  Keep this window open while using the app.
 REM  Access the app at: http://localhost:8000
 REM ============================================================
 
-cd /d "%~dp0backend"
+cd /d "%~dp0"
 
 REM Activate virtual environment
 if exist venv\Scripts\activate.bat (
@@ -22,6 +22,6 @@ echo   http://localhost:8000
 echo  ========================
 echo.
 
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 
 pause
