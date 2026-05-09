@@ -6,7 +6,7 @@ Pipeline:
   2. All segments concatenated via FFmpeg concat demuxer (stream copy, no re-encode).
   3. Audio muxed on the final pass.
 
-Quality: H.264 High Profile, CRF 18, AAC 192 kbps, 1920×1080 @ 25 fps.
+Quality: H.264 High Profile, CRF 18, AAC 192 kbps, 1920×1080 @ 50 fps.
 """
 import subprocess
 import shutil
@@ -16,14 +16,16 @@ from pathlib import Path
 from typing import List, Dict, Any, Callable
 
 # Output spec
-FPS = 25
+FPS = 50
 WIDTH = 1920
 HEIGHT = 1080
 CRF = 18
 AUDIO_BITRATE = "192k"
 FADE_DURATION = 0.4   # seconds fade-in / fade-out per segment
+KEN_BURNS_ZOOM = 0.18
+KEN_BURNS_SUPERSAMPLE = 3.0
 
-# Ken-Burns anchor points (top-left corner of crop in a 2× scaled image).
+# Ken-Burns anchor points (top-left corner of crop in an oversampled image).
 # Variables: iw/ih = input (scaled) dims, zoom = current zoom factor.
 _KB_PANS = [
     # centre zoom
@@ -67,14 +69,17 @@ def _cover_filter(width: int, height: int, scale_factor: float = 1.0) -> str:
 
 def _build_zoompan(frames: int, pan_x: str, pan_y: str, width: int, height: int) -> str:
     """Build zoompan + fade filter string for one segment."""
-    # Deterministic time-based zoom: each frame computes its exact value from on/d,
-    # avoiding the floating-point accumulation of the incremental 'zoom+delta' pattern
-    # which causes the visible micro-jitter on playback.
-    zoom_expr = f"1.0+0.18*on/{frames}"
+    last_frame = max(frames - 1, 1)
+    progress_expr = f"on/{last_frame}"
+    eased_progress_expr = f"({progress_expr})*({progress_expr})*(3-2*({progress_expr}))"
+
+    # Compute the zoom from absolute frame progress. The higher FPS and
+    # oversampled input make FFmpeg's integer crop rounding much less visible.
+    zoom_expr = f"1.0+{KEN_BURNS_ZOOM}*{eased_progress_expr}"
 
     # Pre-crop to the output aspect before zoompan so vertical exports never stretch images.
     vf = (
-        f"{_cover_filter(width, height, 1.5)},"
+        f"{_cover_filter(width, height, KEN_BURNS_SUPERSAMPLE)},"
         f"zoompan="
         f"z='{zoom_expr}':"
         f"x='{pan_x}':"

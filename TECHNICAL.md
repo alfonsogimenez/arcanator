@@ -235,8 +235,8 @@ Arcanator/
 
 ### 5.4 Generación de vídeo (`video_gen.py`)
 
-- **Salida:** H.264 High Profile, CRF 18, 1920×1080 @ 25 fps, AAC 192 kbps
-- **Ken-Burns:** filtro `zoompan` de FFmpeg, zoom lineal de 1.0 → 1.18, 7 patrones de pan aleatorios (centro, izquierda, derecha, arriba, abajo, diagonal ↘, diagonal ↙)
+- **Salida:** H.264 High Profile, CRF 18, 1920×1080 @ 50 fps, AAC 192 kbps
+- **Ken-Burns:** filtro `zoompan` de FFmpeg, zoom suavizado de 1.0 → 1.18 con sobremuestreo 3x, 7 patrones de pan aleatorios (centro, izquierda, derecha, arriba, abajo, diagonal ↘, diagonal ↙)
 - **Fade:** fade-in + fade-out de 0.4s por segmento vía filtro `fade`
 - **Concat:** concat demuxer (fichero `.txt` de lista) → une segmentos sin re-encodear
 - **Mux final:** `-map 0:v -map 1:a` en lugar de `-shortest` para evitar truncado de audio; el último slot se extiende hasta la duración exacta del audio obtenida con `ffprobe`
