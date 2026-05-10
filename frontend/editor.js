@@ -125,6 +125,9 @@
   let panelLoadingMore = false;
   let panelHasMore     = true;
   let panelObserver    = null;
+  let panelRequestSeq  = 0;
+  let panelAbortController = null;
+  let panelAutoLoadEnabled = false;
   let wavesurferReady  = false;
 
   // -- Bootstrap: load job data -----------------------------
@@ -654,17 +657,28 @@
   }
 
   async function loadPanelResults(query, reset) {
-    if (panelLoadingMore) return;
-    if (!reset && !panelHasMore) return;
-
-    panelLoadingMore = true;
     query = query.trim();
-    if (!query) { panelLoadingMore = false; return; }
+    if (!query) return;
+
+    if (reset) {
+      panelRequestSeq += 1;
+      if (panelAbortController) panelAbortController.abort();
+    } else {
+      if (panelLoadingMore) return;
+      if (!panelHasMore) return;
+    }
+
+    const requestSeq = panelRequestSeq;
+    const requestOffset = reset ? 0 : panelOffset;
+    const controller = new AbortController();
+    panelAbortController = controller;
+    panelLoadingMore = true;
 
     if (reset) {
       panelCurrentQuery = query;
       panelOffset = 0;
       panelHasMore = true;
+      panelAutoLoadEnabled = false;
       panelGridInner.innerHTML = '';
       panelQuery.textContent = query;
       panelSpinner.classList.remove('hidden');
@@ -674,9 +688,19 @@
     }
 
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(query)}&offset=${panelOffset}`);
+      const cacheBust = `${Date.now()}-${requestSeq}`;
+      const res = await fetch(
+        `/api/search?q=${encodeURIComponent(query)}&offset=${requestOffset}&_=${cacheBust}`,
+        {
+          signal: controller.signal,
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' },
+        }
+      );
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
+      if (requestSeq !== panelRequestSeq || query !== panelCurrentQuery) return;
+
       const entries = data.entries || (data.urls || []).map(u => ({ url: u, page_url: '' }));
 
       entries.forEach(({ url, page_url: pageUrl }) => {
@@ -716,24 +740,34 @@
         panelGridInner.appendChild(wrapper);
       });
 
-      panelOffset += entries.length;
+      panelOffset = requestOffset + entries.length;
       panelHasMore = entries.length >= 20; // if fewer returned, assume no more
     } catch (err) {
+      if (err.name === 'AbortError') return;
+      if (requestSeq !== panelRequestSeq || query !== panelCurrentQuery) return;
       panelQuery.textContent = `Error: ${err.message}`;
     } finally {
-      panelLoadingMore = false;
-      panelLoadMore.classList.add('hidden');
-      if (reset) {
-        panelSpinner.classList.add('hidden');
-        panelGrid.style.display = '';
-        panelGrid.classList.remove('hidden');
+      if (requestSeq === panelRequestSeq && query === panelCurrentQuery) {
+        panelLoadingMore = false;
+        if (panelAbortController === controller) panelAbortController = null;
+        panelLoadMore.classList.add('hidden');
+        if (reset) {
+          panelSpinner.classList.add('hidden');
+          panelGrid.style.display = '';
+          panelGrid.classList.remove('hidden');
+          window.setTimeout(() => {
+            if (requestSeq === panelRequestSeq && query === panelCurrentQuery) {
+              panelAutoLoadEnabled = true;
+            }
+          }, 250);
+        }
       }
     }
   }
 
   // Infinite scroll observer
   panelObserver = new IntersectionObserver((entries) => {
-    if (entries[0].isIntersecting && panelCurrentQuery) {
+    if (entries[0].isIntersecting && panelCurrentQuery && panelAutoLoadEnabled) {
       loadPanelResults(panelCurrentQuery, false);
     }
   }, { root: panelGrid, threshold: 0.1 });
@@ -758,6 +792,11 @@
   }
 
   function closePanel() {
+    panelRequestSeq += 1;
+    if (panelAbortController) panelAbortController.abort();
+    panelAbortController = null;
+    panelLoadingMore = false;
+    panelAutoLoadEnabled = false;
     searchPanel.style.transform = 'translateX(100%)';
     panelBackdrop.classList.add('hidden');
     panelSlotIdx = null;

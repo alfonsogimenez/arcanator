@@ -588,13 +588,13 @@ async def free_search_images(q: str, offset: int = 0):
     if not q.strip():
         raise HTTPException(status_code=400, detail="Query vacía.")
     from backend.services.image_gen import _scrape_bing_image_entries
-    # Vary the query slightly per page so Bing returns different results
     query = q.strip()
-    if offset > 0:
-        query = f"{query} {offset}"
-    raw = _scrape_bing_image_entries(query, count=24)
+    raw = _scrape_bing_image_entries(query, count=24, offset=max(0, offset))
     entries = [{"url": e["murl"], "page_url": e["purl"]} for e in raw]
-    return {"entries": entries, "query": q.strip(), "offset": offset}
+    return JSONResponse(
+        {"entries": entries, "query": query, "offset": offset},
+        headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -611,7 +611,10 @@ async def search_slot_images(job_id: str, index: int):
     query = slots[index].get("prompt", slots[index].get("text", ""))
     raw   = _scrape_bing_image_entries(query, count=24)
     entries = [{"url": e["murl"], "page_url": e["purl"]} for e in raw]
-    return {"entries": entries, "query": query}
+    return JSONResponse(
+        {"entries": entries, "query": query},
+        headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -627,12 +630,13 @@ async def use_url_for_slot(job_id: str, index: int, body: dict):
     url = body.get("url", "").strip()
     if not url.startswith("http") and not url.startswith("/output/"):
         raise HTTPException(status_code=400, detail="URL invalida.")
+    page_url = body.get("page_url", "").strip()
 
     import shutil as _shutil
     from backend.services.image_gen import download_url_to_path
     job_dir    = OUTPUT_DIR / job_id
     images_dir = job_dir / "images"
-    images_dir.mkdir(exist_ok=True)
+    images_dir.mkdir(parents=True, exist_ok=True)
 
     with _lock:
         n_cands = len(_jobs[job_id]["slots"][index].get("candidates", []))
@@ -648,13 +652,12 @@ async def use_url_for_slot(job_id: str, index: int, body: dict):
         _shutil.copy2(str(src), str(out_path))
         ok = True
     else:
-        ok = download_url_to_path(url, out_path)
+        ok = await asyncio.to_thread(download_url_to_path, url, out_path, page_url)
 
     if not ok:
         raise HTTPException(status_code=422, detail="No se pudo descargar la imagen desde esa URL.")
 
     image_url  = f"/output/{job_id}/images/{index}_{file_idx}.jpg"
-    page_url   = body.get("page_url", "").strip()
     new_cand   = {"url": url, "page_url": page_url, "path": str(out_path), "image_url": image_url}
 
     with _lock:
